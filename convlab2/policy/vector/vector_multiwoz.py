@@ -29,11 +29,13 @@ class MultiWozVector(Vector):
 
     def __init__(self, voc_file, voc_opp_file, character='sys',
                  intent_file=DEFAULT_INTENT_FILEPATH,
+                 domains=None,
                  composite_actions=False,
                  vocab_size=500):
 
-        self.belief_domains = ['Attraction', 'Restaurant', 'Train', 'Hotel', 'Taxi', 'Hospital', 'Police']
-        self.db_domains = ['Attraction', 'Restaurant', 'Train', 'Hotel']
+        self.belief_domains = [d.capitalize() for d in domains] if domains else['Attraction', 'Restaurant', 'Train', 'Hotel', 'Taxi', 'Hospital', 'Police']
+        self.db_domains = list(set(['Attraction', 'Restaurant', 'Train', 'Hotel']) & set(self.belief_domains))
+
         self.composite_actions = composite_actions
         self.vocab_size = vocab_size
 
@@ -41,7 +43,7 @@ class MultiWozVector(Vector):
             intents = json.load(f)
         self.informable = intents['informable']
         self.requestable = intents['requestable']
-        self.db = Database()
+        self.db = Database(domains=domains)
 
         with open(voc_file) as f:
             self.da_voc = f.read().splitlines()
@@ -50,10 +52,27 @@ class MultiWozVector(Vector):
 
         if self.composite_actions:
             self.load_composite_actions()
+
+        self.da_voc = self.filter_da_by_domains(self.da_voc)
+        self.da_voc_opp = self.filter_da_by_domains(self.da_voc_opp)
+
         self.character = character
         self.generate_dict()
         self.cur_domain = None
 
+    def filter_da_by_domains(self, da_voc):
+        filtered_da_voc = []
+        for da in da_voc:
+            in_domain = True
+            actions = da.split(';')
+            for action in actions:
+                domain, intent, slot, value = action.split('-')
+                if domain.capitalize() not in self.belief_domains and domain != 'general':
+                    in_domain =  False
+                    break
+            if in_domain:
+                filtered_da_voc.append(da)
+        return filtered_da_voc
 
     def load_composite_actions(self):
         """

@@ -74,7 +74,7 @@ def sampler(pid, queue, evt, env, policy, batchsz):
 
             # update per step
             s = next_s
-            real_traj_len = t
+            real_traj_len = t + 1
 
             if done:
                 break
@@ -164,13 +164,15 @@ if __name__ == '__main__':
     # simple rule DST
     dst_sys = RuleDST()
 
-    policy_sys = PPO(True)
+    domains = ['restaurant']
+
+    policy_sys = PPO(True, domains=domains)
     policy_sys.load(args.load_path)
 
     # not use dst
     dst_usr = None
     # rule policy
-    policy_usr = RulePolicy(character='usr')
+    policy_usr = RulePolicy(character='usr', domain=set(domains))
     # assemble
     simulator = PipelineAgent(None, None, policy_usr, None, 'user')
 

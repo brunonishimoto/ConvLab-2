@@ -469,10 +469,14 @@ class GoalGenerator:
 
         return domain_goal
 
-    def get_user_goal(self):
+    def get_user_goal(self, domain=None):
         domain_ordering = ()
-        while len(domain_ordering) <= 0:
-            domain_ordering = nomial_sample(self.domain_ordering_dist)
+
+        if domain:
+            domain_ordering = domain
+        else:
+            while len(domain_ordering) <= 0:
+                domain_ordering = nomial_sample(self.domain_ordering_dist)
         # domain_ordering = ('restaurant',)
 
         user_goal = {dom: self._get_domain_goal(dom) for dom in domain_ordering}

@@ -221,7 +221,7 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True):
     
             for key in sess.evaluator.goal: 
                 if key not in task_success: 
-                    task_success[key] = []
+                    task_success[key] = [task_succ]
                 else: 
                     task_success[key].append(task_succ)
             task_success['All'].append(task_succ)

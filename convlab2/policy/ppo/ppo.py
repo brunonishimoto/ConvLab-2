@@ -21,7 +21,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class PPO(Policy):
 
-    def __init__(self, is_train=False, dataset='Multiwoz'):
+    def __init__(self, is_train=False, dataset='Multiwoz', domains=None):
 
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json'), 'r') as f:
             cfg = json.load(f)
@@ -40,7 +40,7 @@ class PPO(Policy):
         if dataset == 'Multiwoz':
             voc_file = os.path.join(root_dir, 'data/multiwoz/sys_da_voc.txt')
             voc_opp_file = os.path.join(root_dir, 'data/multiwoz/usr_da_voc.txt')
-            self.vector = MultiWozVector(voc_file, voc_opp_file)
+            self.vector = MultiWozVector(voc_file, voc_opp_file, domains=domains)
             self.policy = MultiDiscretePolicy(self.vector.state_dim, cfg['h_dim'], self.vector.da_dim).to(device=DEVICE)
 
         self.value = Value(self.vector.state_dim, cfg['hv_dim']).to(device=DEVICE)

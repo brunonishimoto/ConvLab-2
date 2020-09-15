@@ -9,10 +9,10 @@ from copy import deepcopy
 
 
 class Database(object):
-    def __init__(self):
+    def __init__(self, domains=None):
         super(Database, self).__init__()
         # loading databases
-        domains = ['restaurant', 'hotel', 'attraction', 'train', 'hospital', 'taxi', 'police']
+        domains = domains if domains else ['restaurant', 'hotel', 'attraction', 'train', 'hospital', 'taxi', 'police']
         self.dbs = {}
         for domain in domains:
             with open(os.path.join(os.path.dirname(

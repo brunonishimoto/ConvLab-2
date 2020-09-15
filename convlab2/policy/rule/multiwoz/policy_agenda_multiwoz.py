@@ -49,7 +49,7 @@ class UserPolicyAgendaMultiWoz(Policy):
     with open(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, os.pardir, 'data/multiwoz/value_set.json')) as f:
         stand_value_dict = json.load(f)
 
-    def __init__(self):
+    def __init__(self, domain=None):
         """
         Constructor for User_Policy_Agenda class.
         """
@@ -61,6 +61,7 @@ class UserPolicyAgendaMultiWoz(Policy):
         self.__turn = 0
         self.goal = None
         self.agenda = None
+        self.domain = domain
 
         Policy.__init__(self)
 
@@ -71,7 +72,7 @@ class UserPolicyAgendaMultiWoz(Policy):
         """ Build new Goal and Agenda for next session """
         self.reset_turn()
         if not ini_goal:
-            self.goal = Goal(self.goal_generator)
+            self.goal = Goal(self.goal_generator, self.domain)
         else:
             self.goal = ini_goal
         self.domain_goals = self.goal.domain_goals
@@ -309,13 +310,14 @@ def check_constraint(slot, val_usr, val_sys):
 class Goal(object):
     """ User Goal Model Class. """
 
-    def __init__(self, goal_generator: GoalGenerator):
+    def __init__(self, goal_generator: GoalGenerator, domain=None):
         """
         create new Goal by random
         Args:
             goal_generator (GoalGenerator): Goal Generator.
+            domain (tuple): specify the domains of the goal to generate
         """
-        self.domain_goals = goal_generator.get_user_goal()
+        self.domain_goals = goal_generator.get_user_goal(domain)
 
         self.domains = list(self.domain_goals['domain_ordering'])
         del self.domain_goals['domain_ordering']
