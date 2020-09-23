@@ -155,7 +155,7 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True):
 
     if dataset_name == 'MultiWOZ':
         dst_sys = RuleDST()
-        
+
         if model_name == "PPO":
             from convlab2.policy.ppo import PPO
             if load_path:
@@ -184,7 +184,7 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True):
                 policy_sys.load(load_path)
             else:
                 policy_sys = GDPL.from_pretrained()
-            
+
         dst_usr = None
 
         policy_usr = RulePolicy(character='usr')
@@ -216,17 +216,16 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True):
                     logging.info(f"percentage of domains that satisfies the database constraints: {sess.evaluator.final_goal_analyze()}")
                     logging.info('-'*50)
                     break
-            else: 
+            else:
                 task_succ = 0
-    
-            for key in sess.evaluator.goal: 
-                if key not in task_success: 
-                    task_success[key] = [task_succ]
-                else: 
-                    task_success[key].append(task_succ)
+
+            for key in sess.evaluator.goal:
+                if key not in task_success:
+                    task_success[key] = []
+                task_success[key].append(task_succ)
             task_success['All'].append(task_succ)
-        
-        for key in task_success: 
+
+        for key in task_success:
             logging.info(f'{key} {len(task_success[key])} {np.average(task_success[key]) if len(task_success[key]) > 0 else 0}')
 
         if calculate_reward:
@@ -251,7 +250,7 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True):
             logging.info(f'total avg reward: {np.mean(reward_tot)}')
     else:
         raise Exception("currently supported dataset: MultiWOZ")
-    
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_name", type=str, default="MultiWOZ", help="name of dataset")
