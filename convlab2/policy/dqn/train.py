@@ -13,9 +13,9 @@ from convlab2.dialog_agent.agent import PipelineAgent
 from convlab2.dialog_agent.env import Environment
 from convlab2.nlu.svm.multiwoz import SVMNLU
 from convlab2.dst.rule.multiwoz import RuleDST
-from convlab2.policy.rule.multiwoz import RulePolicy
+from convlab2.policy.rule.multiwoz import RulePolicy, RuleBasedMultiwozBot
 from convlab2.policy.dqn import DQN
-from convlab2.policy.rlmodule import Memory, Transition
+from convlab2.policy.rlmodule import Memory, Transition, MemoryReplay
 from convlab2.nlg.template.multiwoz import TemplateNLG
 from convlab2.evaluator.multiwoz_eval import MultiWozEvaluator
 from argparse import ArgumentParser
@@ -40,6 +40,7 @@ def sampler(pid, queue, evt, env, policy, batchsz):
     :return:
     """
     buff = Memory()
+    info = {'success': [], 'rewards': [], 'turns': [], 'step_rewards': []}
 
     # we need to sample batchsz of (state, action, next_state, reward, mask)
     # each trajectory contains `trajectory_len` num of items, so we only need to sample
@@ -54,6 +55,7 @@ def sampler(pid, queue, evt, env, policy, batchsz):
     while sampled_num < batchsz:
         # for each trajectory, we reset the env and get initial state
         s = env.reset()
+        total_reward = 0
 
         for t in range(traj_len):
 
@@ -77,7 +79,11 @@ def sampler(pid, queue, evt, env, policy, batchsz):
             s = next_s
             real_traj_len = t
 
+            total_reward += r
             if done:
+                info['success'].append(env.usr.policy.policy.goal.task_complete())
+                info['rewards'].append(total_reward)
+                info['turns'].append(2 * real_traj_len)
                 break
 
         # this is end of one trajectory
@@ -87,7 +93,7 @@ def sampler(pid, queue, evt, env, policy, batchsz):
 
     # this is end of sampling all batchsz of items.
     # when sampling is over, push all buff data into queue
-    queue.put([pid, buff])
+    queue.put([pid, buff, info])
     evt.wait()
 
 
@@ -126,50 +132,80 @@ def sample(env, policy, batchsz, process_num):
         p.start()
 
     # we need to get the first Memory object and then merge others Memory use its append function.
-    pid0, buff0 = queue.get()
+    pid0, buff0, info0 = queue.get()
     for _ in range(1, process_num):
-        pid, buff_ = queue.get()
+        pid, buff_, info_ = queue.get()
         buff0.append(buff_)  # merge current Memory into buff0
+        info0['success'].extend(info_['success'])
+        info0['rewards'].extend(info_['rewards'])
+        info0['turns'].extend(info_['turns'])
     evt.set()
 
     # now buff saves all the sampled data
     buff = buff0
 
+    logging.info(f'batch success rate: {sum(info0["success"]) / len(info0["success"])}')
+    logging.info(f'batch avg reward: {sum(info0["rewards"]) / len(info0["rewards"])}')
+    logging.info(f'batch avg turns: {sum(info0["turns"]) / len(info0["turns"])}')
+
     return buff
 
 
-def update(env, policy, batchsz, epoch, process_num):
+def update(env, policy, batchsz, epoch, process_num, experience_replay):
     # sample data asynchronously
     buff = sample(env, policy, batchsz, process_num)
-    policy.update_memory(buff)
 
-    policy.update(epoch)
+    experience_replay.append(buff)
+
+    policy.update(epoch, experience_replay)
+
+def run_warmup(env, policy, batchsz, process_num, experience_replay, policy_sys):
+    # sample data asynchronously
+    buff = sample(env, policy, batchsz, process_num)
+
+    experience_replay.append(buff)
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument("--load_path", type=str, default="", help="path of model to load")
     parser.add_argument("--batchsz", type=int, default=100, help="batch size of trajactory sampling")
-    parser.add_argument("--epoch", type=int, default=200, help="number of epochs to train")
-    parser.add_argument("--process_num", type=int, default=3, help="number of processes of trajactory sampling")
+    parser.add_argument("--epoch", type=int, default=300, help="number of epochs to train")
+    parser.add_argument("--process_num", type=int, default=4, help="number of processes of trajactory sampling")
+    parser.add_argument("--warm_up", type=int, default=2000, help="number of warm_up episodes (0 if no warm_up)")
+    parser.add_argument("--mem_size", type=int, default=40000, help="size of experience replay")
     args = parser.parse_args()
+
+    experience_replay = MemoryReplay(args.mem_size)
 
     # simple rule DST
     dst_sys = RuleDST()
 
-    policy_sys = DQN(True)
+    domains = ['hotel']
+    # domains = None
+
+    policy_sys = DQN(True, domains=domains)
     policy_sys.load(args.load_path)
+
+    policy_sys_rule = RulePolicy(character='sys', domains=domains)
+
+    policy_sys_rule.vector = policy_sys.vector
 
     # not use dst
     dst_usr = None
     # rule policy
-    policy_usr = RulePolicy(character='usr')
+    policy_usr = RulePolicy(character='usr', domains=domains)
     # assemble
     simulator = PipelineAgent(None, None, policy_usr, None, 'user')
 
-    evaluator = MultiWozEvaluator()
+    # evaluator = MultiWozEvaluator(domains=domains)
+    evaluator = None
     env = Environment(None, simulator, None, dst_sys, evaluator)
 
+    # for _ in range(args.warm_up):
+    run_warmup(env, policy_sys_rule, args.warm_up, args.process_num, experience_replay, policy_sys)
+
+    logging.info('Warmup Ended')
 
     for i in range(args.epoch):
-        update(env, policy_sys, args.batchsz, i, args.process_num)
+        update(env, policy_sys, args.batchsz, i, args.process_num, experience_replay)
