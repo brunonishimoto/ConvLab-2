@@ -15,12 +15,15 @@ def extract_act(data, counter):
             action = ''
             if meta['dialog_act']:
                 for act, slots in meta['dialog_act'].items():
+                    slots_cnt = {}
                     for slot in slots:
                         action += f'{act}-'
                         if slot[1] == '?' or slot[0] == 'none':
                             action += f'{slot[0]}-{slot[1]};'
                         else:
-                            action += f'{slot[0]}-1;'
+                            slots_cnt.setdefault(slot[0], 0)
+                            slots_cnt[slot[0]] += 1
+                            action += f'{slot[0]}-{slots_cnt[slot[0]]};'
                 counter.update([action[:-1]])
 
 if __name__ == '__main__':
