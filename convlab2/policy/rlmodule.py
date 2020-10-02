@@ -55,7 +55,7 @@ class DiscretePolicy(nn.Module):
         log_prob = torch.log(trg_a_probs)
 
         return log_prob
- 
+
 class EpsilonGreedyPolicy(nn.Module):
     def __init__(self, s_dim, h_dim, a_dim, epsilon_spec={'start': 0.1, 'end': 0.0, 'end_epoch': 200}):
         super(EpsilonGreedyPolicy, self).__init__()
@@ -101,7 +101,7 @@ class EpsilonGreedyPolicy(nn.Module):
 
         return a_vec
 
-    def update_epsilon(self, epoch):
+    def update(self, epoch):
         # Linear decay
         a = -float(self.start - self.end) / self.end_epoch
         b = float(self.start)
@@ -114,10 +114,62 @@ class EpsilonGreedyPolicy(nn.Module):
         a_weights = self.forward(s)
         return a_weights.argmax(0, True)
 
+class SoftmaxPolicy(nn.Module):
+    def __init__(self, s_dim, h_dim, a_dim, tau_spec={'start': 0.1, 'end': 0.0, 'end_epoch': 200}):
+        super(SoftmaxPolicy, self).__init__()
+
+        self.net = nn.Sequential(nn.Linear(s_dim, h_dim),
+                                 nn.ReLU(),
+                                #  nn.Linear(h_dim, h_dim),
+                                #  nn.ReLU(),
+                                 nn.Linear(h_dim, a_dim))
+
+        self.tau = tau_spec['start']
+        self.start = tau_spec['start']
+        self.end = tau_spec['end']
+        self.end_epoch = tau_spec['end_epoch']
+        self.a_dim = a_dim
+
+    def forward(self, s):
+        # [b, s_dim] => [b, a_dim]
+        a_weights = self.net(s)
+
+        return a_weights
+
+    def select_action(self, s, is_train=True):
+        """
+        :param s: [s_dim]
+        :return: [1]
+        """
+        # forward to get action probs
+        # [s_dim] => [a_dim]
+        q_values = self.forward(s)
+        q_modified = q_values / self.tau
+        q_max = torch.max(q_modified)
+        exp_values = torch.exp(q_modified - q_max)
+
+        probs = exp_values / torch.sum(exp_values)
+        index = probs.reshape(self.a_dim).multinomial(1)
+        # index = np.random.choice(list(range(self.a_dim)), p=probs.reshape(self.a_dim).cpu().numpy())
+
+
+        # transforms action index to a vector action (one-hot encoding)
+        a_vec = torch.zeros(self.a_dim)
+        a_vec[index] = 1.
+
+        return a_vec
+
+    def update(self, epoch):
+        # Linear decay
+        a = -float(self.start - self.end) / self.end_epoch
+        b = float(self.start)
+        self.tau = max(self.end, a * float(epoch) + b)
+
+
 class MultiDiscretePolicy(nn.Module):
     def __init__(self, s_dim, h_dim, a_dim):
         super(MultiDiscretePolicy, self).__init__()
-        
+
         self.net = nn.Sequential(nn.Linear(s_dim, h_dim),
                                  nn.ReLU(),
                                  nn.Linear(h_dim, h_dim),
@@ -129,7 +181,7 @@ class MultiDiscretePolicy(nn.Module):
         a_weights = self.net(s)
 
         return a_weights
-    
+
     def select_action(self, s, sample=True):
         """
         :param s: [s_dim]
@@ -139,17 +191,17 @@ class MultiDiscretePolicy(nn.Module):
         # [s_dim] => [a_dim]
         a_weights = self.forward(s)
         a_probs = torch.sigmoid(a_weights)
-        
+
         # [a_dim] => [a_dim, 2]
         a_probs = a_probs.unsqueeze(1)
         a_probs = torch.cat([1-a_probs, a_probs], 1)
         a_probs = torch.clamp(a_probs, 1e-10, 1 - 1e-10)
-        
+
         # [a_dim, 2] => [a_dim]
         a = a_probs.multinomial(1).squeeze(1) if sample else a_probs.argmax(1)
-        
+
         return a
-    
+
     def get_log_prob(self, s, a):
         """
         :param s: [b, s_dim]
@@ -160,17 +212,17 @@ class MultiDiscretePolicy(nn.Module):
         # [b, s_dim] => [b, a_dim]
         a_weights = self.forward(s)
         a_probs = torch.sigmoid(a_weights)
-        
+
         # [b, a_dim] => [b, a_dim, 2]
         a_probs = a_probs.unsqueeze(-1)
         a_probs = torch.cat([1-a_probs, a_probs], -1)
-        
+
         # [b, a_dim, 2] => [b, a_dim]
         trg_a_probs = a_probs.gather(-1, a.unsqueeze(-1).long()).squeeze(-1)
         log_prob = torch.log(trg_a_probs)
-        
+
         return log_prob.sum(-1, keepdim=True)
-        
+
 
 class ContinuousPolicy(nn.Module):
     def __init__(self, s_dim, h_dim, a_dim):
@@ -226,9 +278,9 @@ class ContinuousPolicy(nn.Module):
             std = log_std.exp()
             var = std.pow(2)
             log_density = - (x - mean).pow(2) / (2 * var) - 0.5 * np.log(2 * np.pi) - log_std
-        
+
             return log_density.sum(-1, keepdim=True)
-        
+
         # forward to get action mean and log_std
         # [b, s_dim] => [b, a_dim]
         a_mean, a_log_std = self.forward(s)
@@ -237,8 +289,8 @@ class ContinuousPolicy(nn.Module):
         log_prob = normal_log_density(a, a_mean, a_log_std)
 
         return log_prob
-    
-    
+
+
 class Value(nn.Module):
     def __init__(self, s_dim, hv_dim):
         super(Value, self).__init__()
@@ -298,7 +350,6 @@ class MemoryReplay(object):
             self.memory.append(None)
         self.memory[self.index] = Transition(*args)
         self.index = (self.index + 1) % self.max_size
-        
 
     def get_batch(self, batch_size=None):
         if batch_size is None:
@@ -319,4 +370,4 @@ class MemoryReplay(object):
         self.index = 0
 
     def __len__(self):
-        return len(self.memory)        
+        return len(self.memory)
