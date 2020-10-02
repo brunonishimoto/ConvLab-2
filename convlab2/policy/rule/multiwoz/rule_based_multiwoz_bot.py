@@ -40,10 +40,10 @@ class RuleBasedMultiwozBot(Policy):
     recommend_flag = -1
     choice = ""
 
-    def __init__(self):
+    def __init__(self, domains=None):
         Policy.__init__(self)
         self.last_state = {}
-        self.db = Database()
+        self.db = Database(domains)
 
     def init_session(self):
         self.last_state = {}

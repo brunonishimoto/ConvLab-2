@@ -35,13 +35,13 @@ NUL_VALUE = ["", "dont care", 'not mentioned', "don't care", "dontcare", "do n't
 
 
 class MultiWozEvaluator(Evaluator):
-    def __init__(self):
+    def __init__(self, domains=None):
         self.sys_da_array = []
         self.usr_da_array = []
         self.goal = {}
         self.cur_domain = ''
         self.booked = {}
-        self.database = Database()
+        self.database = Database(domains)
         self.dbs = self.database.dbs
 
     def _init_dict(self):

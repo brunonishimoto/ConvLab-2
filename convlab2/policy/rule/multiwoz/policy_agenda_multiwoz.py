@@ -49,19 +49,19 @@ class UserPolicyAgendaMultiWoz(Policy):
     with open(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, os.pardir, 'data/multiwoz/value_set.json')) as f:
         stand_value_dict = json.load(f)
 
-    def __init__(self, domain=None):
+    def __init__(self, domains=None):
         """
         Constructor for User_Policy_Agenda class.
         """
-        self.max_turn = 40
-        self.max_initiative = 4
+        self.max_turn = 20
+        self.max_initiative = 1
 
         self.goal_generator = GoalGenerator()
 
         self.__turn = 0
         self.goal = None
         self.agenda = None
-        self.domain = domain
+        self.domains = set(domains) if domains else None
 
         Policy.__init__(self)
 
@@ -72,7 +72,7 @@ class UserPolicyAgendaMultiWoz(Policy):
         """ Build new Goal and Agenda for next session """
         self.reset_turn()
         if not ini_goal:
-            self.goal = Goal(self.goal_generator, self.domain)
+            self.goal = Goal(self.goal_generator, self.domains)
         else:
             self.goal = ini_goal
         self.domain_goals = self.goal.domain_goals
@@ -147,11 +147,11 @@ class UserPolicyAgendaMultiWoz(Policy):
             reward (float): Reward given by user.
         """
         if self.goal.task_complete():
-            reward = 2.0 * self.max_turn
+            reward = 2 * self.max_turn
         elif self.agenda.is_empty():
-            reward = -1.0 * self.max_turn
+            reward = -1 * self.max_turn
         else:
-            reward = -1.0
+            reward = -1
         return reward
 
     @classmethod
