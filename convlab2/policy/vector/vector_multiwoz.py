@@ -20,6 +20,11 @@ mapping = {'restaurant': {'addr': 'address', 'area': 'area', 'food': 'food', 'na
            'hospital': {'post': 'postcode', 'phone': 'phone', 'addr': 'address', 'department': 'department'},
            'police': {'post': 'postcode', 'phone': 'phone', 'addr': 'address'}}
 
+# Information required to finish booking, according to different domain.
+booking_info = {'Train': ['People'],
+                'Restaurant': ['Time', 'Day', 'People'],
+                'Hotel': ['Stay', 'Day', 'People']}
+
 DEFAULT_INTENT_FILEPATH = os.path.join(
                             os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
                             'data/multiwoz/trackable_intent.json'
@@ -50,11 +55,13 @@ class MultiWozVector(Vector):
         with open(voc_opp_file) as f:
             self.da_voc_opp = f.read().splitlines()
 
-        if self.composite_actions:
-            self.load_composite_actions()
-
         self.da_voc = self.filter_da_by_domains(self.da_voc)
         self.da_voc_opp = self.filter_da_by_domains(self.da_voc_opp)
+
+        if self.composite_actions:
+            self.da_voc = [da for da in self.da_voc if not da.endswith(('2', '3'))]
+            self.load_composite_actions()
+
 
         self.character = character
         self.generate_dict()
@@ -63,16 +70,26 @@ class MultiWozVector(Vector):
     def filter_da_by_domains(self, da_voc):
         filtered_da_voc = []
         for da in da_voc:
-            in_domain = True
-            actions = da.split(';')
-            for action in actions:
-                domain, intent, slot, value = action.split('-')
-                if domain.capitalize() not in self.belief_domains and domain != 'general':
-                    in_domain =  False
-                    break
+            in_domain = self.is_in_domains(da)
             if in_domain:
                 filtered_da_voc.append(da)
         return filtered_da_voc
+
+    def is_in_domains(self, da):
+        in_domain = True
+
+        all_booking_slots = ['Ref']
+        for domain in self.belief_domains:
+            all_booking_slots.extend(booking_info.get(domain, []))
+
+        actions = da.split(';')
+        for action in actions:
+            domain, intent, slot, value = action.split('-')
+            if domain.capitalize() not in self.belief_domains and domain != 'general' and not (domain.capitalize() == 'Booking' and slot in all_booking_slots):
+                in_domain = False
+                break
+
+        return in_domain
 
     def load_composite_actions(self):
         """
@@ -84,7 +101,7 @@ class MultiWozVector(Vector):
         with open(composite_actions_filepath, 'r') as f:
             composite_actions_stats = json.load(f)
             for action in composite_actions_stats:
-                if len(action.split(';')) > 1:
+                if len(action.split(';')) > 1 and self.is_in_domains(action):
                     # append only composite actions as single actions are already in self.da_voc
                     self.da_voc.append(action)
 
@@ -266,13 +283,37 @@ class MultiWozVector(Vector):
         act_vec = np.zeros(self.da_dim)
 
         if self.composite_actions:
-            composite_action = ';'.join(action)
             for act in self.act2vec:
-                if set(action) == set(act.split(';')):
+                if action == act.split(';'):
                     act_vec[self.act2vec[act]] = 1.
                     break
+            else:
+                most_similar_action = self.find_closest_action(action)
+                act_vec[self.act2vec[most_similar_action]] = 1.
         else:
             for da in action:
                 if da in self.act2vec:
                     act_vec[self.act2vec[da]] = 1.
         return act_vec
+
+    def find_closest_action(self, action):
+        candidates = []
+        best_intersection = 0
+        smaller_length = 0
+
+        for da in self.da_voc:
+            da_splited = da.split(';')
+            intersection = len(set(action) & set(da_splited))
+            if intersection > best_intersection:
+                best_intersection = intersection
+                candidates = [da]
+                smaller_length = len(da_splited)
+            elif intersection == best_intersection and intersection > 0:
+                length = len(da_splited)
+                if length < smaller_length:
+                    smaller_length = length
+                    candidates = [da]
+                elif length == smaller_length:
+                    candidates.append(da)
+
+        return np.random.choice(candidates)
