@@ -8,17 +8,17 @@ from convlab2.util.dataloader.dataset_dataloader import MultiWOZDataloader
 from convlab2.util.dataloader.module_dataloader import ActPolicyDataloader
 
 class ActMLEPolicyDataLoader():
-    
+
     def __init__(self):
         self.vector = None
-        
-    def _build_data(self, root_dir, processed_dir):        
+
+    def _build_data(self, root_dir, processed_dir, domains=None):
         self.data = {}
         data_loader = ActPolicyDataloader(dataset_dataloader=MultiWOZDataloader())
         for part in ['train', 'val', 'test']:
             self.data[part] = []
-            raw_data = data_loader.load_data(data_key=part, role='sys')[part]
-            
+            raw_data = data_loader.load_data(data_key=part, role='sys', domains=domains)[part]
+
             for belief_state, context_dialog_act, terminated, dialog_act in \
                 zip(raw_data['belief_state'], raw_data['context_dialog_act'], raw_data['terminated'], raw_data['dialog_act']):
                 state = default_state()
@@ -29,7 +29,7 @@ class ActMLEPolicyDataLoader():
                 action = dialog_act
                 self.data[part].append([self.vector.state_vectorize(state),
                          self.vector.action_vectorize(action)])
-        
+
         os.makedirs(processed_dir)
         for part in ['train', 'val', 'test']:
             with open(os.path.join(processed_dir, '{}.pkl'.format(part)), 'wb') as f:
@@ -40,7 +40,7 @@ class ActMLEPolicyDataLoader():
         for part in ['train', 'val', 'test']:
             with open(os.path.join(processed_dir, '{}.pkl'.format(part)), 'rb') as f:
                 self.data[part] = pickle.load(f)
-                
+
     def create_dataset(self, part, batchsz):
         print('Start creating {} dataset'.format(part))
         s = []

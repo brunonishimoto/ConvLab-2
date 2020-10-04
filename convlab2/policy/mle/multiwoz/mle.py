@@ -3,7 +3,7 @@ import torch
 import os
 import json
 from convlab2.policy.mle.mle import MLEAbstract
-from convlab2.policy.rlmodule import MultiDiscretePolicy
+from convlab2.policy.rlmodule import MultiDiscretePolicy, DiscretePolicy
 from convlab2.policy.vector.vector_multiwoz import MultiWozVector
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -12,18 +12,21 @@ DEFAULT_DIRECTORY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mo
 DEFAULT_ARCHIVE_FILE = os.path.join(DEFAULT_DIRECTORY, "mle_policy_multiwoz.zip")
 
 class MLE(MLEAbstract):
-    
+
     def __init__(self):
         root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-        
+
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json'), 'r') as f:
             cfg = json.load(f)
-        
+
         voc_file = os.path.join(root_dir, 'data/multiwoz/sys_da_voc.txt')
         voc_opp_file = os.path.join(root_dir, 'data/multiwoz/usr_da_voc.txt')
-        self.vector = MultiWozVector(voc_file, voc_opp_file)
-               
-        self.policy = MultiDiscretePolicy(self.vector.state_dim, cfg['h_dim'], self.vector.da_dim).to(device=DEVICE)
+        self.vector = MultiWozVector(voc_file, voc_opp_file, composite_actions=cfg['composite_actions'], vocab_size=cfg['vocab_size'], domains=cfg['domains'])
+
+        if cfg['composite_actions']:
+            self.policy = DiscretePolicy(self.vector.state_dim, cfg['h_dim'], self.vector.da_dim).to(device=DEVICE)
+        else:
+            self.policy = MultiDiscretePolicy(self.vector.state_dim, cfg['h_dim'], self.vector.da_dim).to(device=DEVICE)
 
     @classmethod
     def from_pretrained(cls,

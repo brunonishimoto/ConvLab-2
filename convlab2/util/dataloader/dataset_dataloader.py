@@ -8,6 +8,7 @@ import sys
 import zipfile
 from pprint import pprint
 from convlab2.util.file_util import read_zipped_json
+from convlab2.policy.vector.vector_multiwoz import booking_info
 
 
 class DatasetDataloader(ABC):
@@ -47,10 +48,26 @@ class MultiWOZDataloader(DatasetDataloader):
                   session_id=False,
                   span_info=False,
                   terminated=False,
-                  goal=False
+                  goal=False,
+                  domains=None
                   ):
         if data_dir is None:
             data_dir = os.path.join(DATA_ROOT, 'multiwoz' + ('_zh' if self.zh else ''))
+
+        all_domains = ['attraction', 'restaurant', 'train', 'hotel', 'taxi', 'hospital', 'police']
+        belief_domains = [d for d in domains] if domains else all_domains
+
+        all_booking_slots = ['Ref', 'none', 'Name']
+        for domain in belief_domains:
+            all_booking_slots.extend(booking_info.get(domain, []))
+
+        def is_in_domains(da):
+            for action in da:
+                intent, domain, slot, value = action
+                if domain not in belief_domains and domain != 'general' and not (domain == 'booking' and slot in all_booking_slots):
+                    return False
+
+            return True
 
         def da2tuples(dialog_act):
             tuples = []
@@ -75,45 +92,48 @@ class MultiWOZDataloader(DatasetDataloader):
             for x in info_list:
                 self.data[data_key][x] = []
             for sess_id, sess in data.items():
-                cur_context = []
-                cur_context_dialog_act = []
-                for i, turn in enumerate(sess['log']):
-                    text = turn['text']
-                    da = da2tuples(turn['dialog_act'])
-                    if role == 'sys' and i % 2 == 0:
+                if set([domain for domain in sess['goal'] if (sess['goal'][domain] and domain in all_domains)]).issubset(belief_domains):
+                    cur_context = []
+                    cur_context_dialog_act = []
+                    for i, turn in enumerate(sess['log']):
+                        da = da2tuples(turn['dialog_act'])
+                        text = turn['text']
+                        if role == 'sys' and i % 2 == 0:
+                            cur_context.append(text)
+                            cur_context_dialog_act.append(da)
+                            continue
+                        elif role == 'usr' and i % 2 == 1:
+                            cur_context.append(text)
+                            cur_context_dialog_act.append(da)
+                            continue
+                        if utterance:
+                            self.data[data_key]['utterance'].append(text)
+                        if dialog_act:
+                            self.data[data_key]['dialog_act'].append(da)
+                        if context:
+                            self.data[data_key]['context'].append(cur_context[-context_window_size:])
+                        if context_dialog_act:
+                            self.data[data_key]['context_dialog_act'].append(cur_context_dialog_act[-context_window_size:])
+                        if belief_state:
+                            self.data[data_key]['belief_state'].append(turn['metadata'])
+                        if last_opponent_utterance:
+                            self.data[data_key]['last_opponent_utterance'].append(
+                                cur_context[-1] if len(cur_context) >= 1 else '')
+                        if last_self_utterance:
+                            self.data[data_key]['last_self_utterance'].append(
+                                cur_context[-2] if len(cur_context) >= 2 else '')
+                        if session_id:
+                            self.data[data_key]['session_id'].append(sess_id)
+                        if span_info:
+                            self.data[data_key]['span_info'].append(turn['span_info'])
+                        if terminated:
+                            self.data[data_key]['terminated'].append(i + 2 >= len(sess['log']))
+                        if goal:
+                            self.data[data_key]['goal'].append(sess['goal'])
                         cur_context.append(text)
                         cur_context_dialog_act.append(da)
-                        continue
-                    elif role == 'usr' and i % 2 == 1:
-                        cur_context.append(text)
-                        cur_context_dialog_act.append(da)
-                        continue
-                    if utterance:
-                        self.data[data_key]['utterance'].append(text)
-                    if dialog_act:
-                        self.data[data_key]['dialog_act'].append(da)
-                    if context:
-                        self.data[data_key]['context'].append(cur_context[-context_window_size:])
-                    if context_dialog_act:
-                        self.data[data_key]['context_dialog_act'].append(cur_context_dialog_act[-context_window_size:])
-                    if belief_state:
-                        self.data[data_key]['belief_state'].append(turn['metadata'])
-                    if last_opponent_utterance:
-                        self.data[data_key]['last_opponent_utterance'].append(
-                            cur_context[-1] if len(cur_context) >= 1 else '')
-                    if last_self_utterance:
-                        self.data[data_key]['last_self_utterance'].append(
-                            cur_context[-2] if len(cur_context) >= 2 else '')
-                    if session_id:
-                        self.data[data_key]['session_id'].append(sess_id)
-                    if span_info:
-                        self.data[data_key]['span_info'].append(turn['span_info'])
-                    if terminated:
-                        self.data[data_key]['terminated'].append(i + 2 >= len(sess['log']))
-                    if goal:
-                        self.data[data_key]['goal'].append(sess['goal'])
-                    cur_context.append(text)
-                    cur_context_dialog_act.append(da)
+                    # else:
+                    #     break
         if ontology:
             ontology_path = os.path.join(data_dir, 'ontology.json')
             self.data['ontology'] = json.load(open(ontology_path))

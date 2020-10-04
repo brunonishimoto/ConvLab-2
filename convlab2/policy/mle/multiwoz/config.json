@@ -1,13 +1,16 @@
 {
-	"batchsz": 32,
-	"epoch": 16,
+	"batchsz": 16,
+	"epoch": 50,
 	"lr": 0.001,
 	"save_dir": "save",
 	"log_dir": "log",
-	"print_per_batch": 400,
+	"print_per_batch": 100,
 	"save_per_epoch": 1,
 	"h_dim": 100,
 	"load": "save/best",
 	"pos_weight": 5,
-	"weight_decay": 0.00001
+	"weight_decay": 0.00001,
+	"composite_actions": false,
+	"vocab_size": 300,
+	"domains": ["restaurant"]
 }
