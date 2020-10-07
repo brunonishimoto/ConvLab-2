@@ -8,8 +8,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 import numpy as np
 import torch
 import logging
+import random
 from torch import multiprocessing as mp
 from convlab2.dialog_agent.agent import PipelineAgent
+from convlab2.dialog_agent.session import BiSession
 from convlab2.dialog_agent.env import Environment
 from convlab2.nlu.svm.multiwoz import SVMNLU
 from convlab2.dst.rule.multiwoz import RuleDST
@@ -159,21 +161,61 @@ def update(env, policy, batchsz, epoch, process_num, experience_replay):
 
     policy.update(epoch, experience_replay)
 
-def run_warmup(env, policy, batchsz, process_num, experience_replay, policy_sys):
+def run_warmup(env, policy, batchsz, warmup_epoch, process_num, experience_replay, policy_sys):
     # sample data asynchronously
     buff = sample(env, policy, batchsz, process_num)
 
     experience_replay.append(buff)
 
+    policy_sys.update(warmup_epoch, experience_replay)
+
+def evaluate(policy_sys, dst_sys, simulator, domains):
+    seed = 20190827
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    policy_sys.eval()
+
+    agent_sys = PipelineAgent(None, dst_sys, policy_sys, None, 'sys')
+
+    evaluator = MultiWozEvaluator(domains=domains)
+    sess = BiSession(agent_sys, simulator, None, evaluator)
+
+    task_success = {'All': []}
+    for seed in range(100):
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        sess.init_session()
+        sys_response = []
+        for i in range(40):
+            sys_response, user_response, session_over, reward = sess.next_turn(sys_response)
+            if session_over is True:
+                task_succ = sess.evaluator.task_success()
+                break
+        else:
+            task_succ = 0
+
+        for key in sess.evaluator.goal:
+            if key not in task_success:
+                task_success[key] = []
+            task_success[key].append(task_succ)
+        task_success['All'].append(task_succ)
+
+    for key in task_success:
+        logging.info(f'{key} {len(task_success[key])} {np.average(task_success[key]) if len(task_success[key]) > 0 else 0}')
+
+    policy_sys.train()
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument("--load_path", type=str, default="", help="path of model to load")
     parser.add_argument("--batchsz", type=int, default=100, help="batch size of trajactory sampling")
-    parser.add_argument("--epoch", type=int, default=300, help="number of epochs to train")
+    parser.add_argument("--epoch", type=int, default=100, help="number of epochs to train")
     parser.add_argument("--process_num", type=int, default=4, help="number of processes of trajactory sampling")
-    parser.add_argument("--warm_up", type=int, default=2000, help="number of warm_up episodes (0 if no warm_up)")
-    parser.add_argument("--mem_size", type=int, default=40000, help="size of experience replay")
+    parser.add_argument("--warm_up", type=int, default=10, help="number of warm_up episodes (0 if no warm_up)")
+    parser.add_argument("--mem_size", type=int, default=5000, help="size of experience replay")
     args = parser.parse_args()
 
     experience_replay = MemoryReplay(args.mem_size)
@@ -181,11 +223,12 @@ if __name__ == '__main__':
     # simple rule DST
     dst_sys = RuleDST()
 
-    domains = ['hotel']
-    # domains = None
+    # domains = ['hotel']
+    domains = None
 
     policy_sys = DQN(True, domains=domains)
     policy_sys.load(args.load_path)
+
 
     policy_sys_rule = RulePolicy(character='sys', domains=domains)
 
@@ -202,10 +245,16 @@ if __name__ == '__main__':
     evaluator = None
     env = Environment(None, simulator, None, dst_sys, evaluator)
 
-    # for _ in range(args.warm_up):
-    run_warmup(env, policy_sys_rule, args.warm_up, args.process_num, experience_replay, policy_sys)
+    for i in range(args.warm_up):
+        run_warmup(env, policy_sys_rule, args.batchsz, i, args.process_num, experience_replay, policy_sys)
+        if (i+1) % 5 == 0:
+            logging.info(f"Evaluating warmup: epoch {i}")
+            evaluate(policy_sys, dst_sys, simulator, domains)
 
     logging.info('Warmup Ended')
 
     for i in range(args.epoch):
         update(env, policy_sys, args.batchsz, i, args.process_num, experience_replay)
+        if (i+1) % 5 == 0:
+            logging.info(f"Evaluating: epoch {i}")
+            evaluate(policy_sys, dst_sys, simulator, domains)

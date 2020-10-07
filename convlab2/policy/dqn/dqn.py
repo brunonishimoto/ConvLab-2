@@ -48,7 +48,7 @@ class DQN(Policy):
         self.net = SoftmaxPolicy(self.vector.state_dim, cfg['h_dim'], self.vector.da_dim, cfg['tau_spec']).to(device=DEVICE)
         self.target_net = copy.deepcopy(self.net)
 
-        self.online_net = self.target_net
+        self.online_net = self.net
         self.eval_net = self.target_net
 
         if is_train:
@@ -64,7 +64,7 @@ class DQN(Policy):
             action : System act, with the form of (act_type, {slot_name_1: value_1, slot_name_2, value_2, ...})
         """
         s_vec = torch.Tensor(self.vector.state_vectorize(state))
-        a = self.net.select_action(s_vec.to(device=DEVICE))
+        a = self.net.select_action(s_vec.to(device=DEVICE), self.is_train)
 
         action = self.vector.action_devectorize(a.numpy())
 
@@ -124,7 +124,8 @@ class DQN(Policy):
         logging.debug('<<dialog policy dqn>> epoch {}, total_loss {}'.format(epoch, total_loss))
 
         # update the epsilon value
-        self.net.update(epoch)
+        if self.is_train:
+            self.net.update(epoch)
 
         # update the target network
         if epoch % self.update_frequency == 0:
@@ -132,6 +133,12 @@ class DQN(Policy):
 
         if (epoch+1) % self.save_per_epoch == 0:
             self.save(self.save_dir, epoch)
+
+    def eval(self):
+        self.is_train = False
+
+    def train(self):
+        self.is_train = True
 
     def save(self, directory, epoch):
         if not os.path.exists(directory):
@@ -143,8 +150,10 @@ class DQN(Policy):
 
     def load(self, filename):
         dqn_mdl_candidates = [
-            filename + '.dqn.mdl',
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), filename + '.dqn.mdl'),
+            filename + '_dqn.pol.mdl',
+            filename + '.pol.mdl',
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), filename + '_dqn.pol.mdl'),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), filename + '.pol.mdl'),
         ]
         for dqn_mdl in dqn_mdl_candidates:
             if os.path.exists(dqn_mdl):
