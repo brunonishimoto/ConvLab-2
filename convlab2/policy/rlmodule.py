@@ -17,6 +17,8 @@ class DiscretePolicy(nn.Module):
                                  nn.ReLU(),
                                  nn.Linear(h_dim, a_dim))
 
+        self.a_dim = a_dim
+
     def forward(self, s):
         # [b, s_dim] => [b, a_dim]
         a_weights = self.net(s)
@@ -35,7 +37,10 @@ class DiscretePolicy(nn.Module):
 
         # randomly sample from normal distribution, whose mean and variance come from policy network.
         # [a_dim] => [1]
-        a = a_probs.multinomial(1) if sample else a_probs.argmax(0, True)
+        index = a_probs.multinomial(1) if sample else a_probs.argmax(0, True)
+
+        a = torch.zeros(self.a_dim)
+        a[index] = 1.
 
         return a
 
@@ -120,8 +125,8 @@ class SoftmaxPolicy(nn.Module):
 
         self.net = nn.Sequential(nn.Linear(s_dim, h_dim),
                                  nn.ReLU(),
-                                #  nn.Linear(h_dim, h_dim),
-                                #  nn.ReLU(),
+                                 nn.Linear(h_dim, h_dim),
+                                 nn.ReLU(),
                                  nn.Linear(h_dim, a_dim))
 
         self.tau = tau_spec['start']
@@ -136,7 +141,7 @@ class SoftmaxPolicy(nn.Module):
 
         return a_weights
 
-    def select_action(self, s, is_train=True):
+    def select_action(self, s, sample=True):
         """
         :param s: [s_dim]
         :return: [1]
@@ -144,13 +149,17 @@ class SoftmaxPolicy(nn.Module):
         # forward to get action probs
         # [s_dim] => [a_dim]
         q_values = self.forward(s)
-        q_modified = q_values / self.tau
-        q_max = torch.max(q_modified)
-        exp_values = torch.exp(q_modified - q_max)
 
-        probs = exp_values / torch.sum(exp_values)
-        index = probs.reshape(self.a_dim).multinomial(1)
-        # index = np.random.choice(list(range(self.a_dim)), p=probs.reshape(self.a_dim).cpu().numpy())
+        if sample:
+            index = q_values.argmax(0, True)
+        else:
+            q_modified = q_values / self.tau
+            q_max = torch.max(q_modified)
+            exp_values = torch.exp(q_modified - q_max)
+
+            probs = exp_values / torch.sum(exp_values)
+            index = probs.reshape(self.a_dim).multinomial(1)
+            # index = np.random.choice(list(range(self.a_dim)), p=probs.reshape(self.a_dim).cpu().numpy())
 
 
         # transforms action index to a vector action (one-hot encoding)
