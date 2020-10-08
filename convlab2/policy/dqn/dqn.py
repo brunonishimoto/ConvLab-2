@@ -8,20 +8,12 @@ import os
 import json
 import copy
 from convlab2.policy.policy import Policy
-<<<<<<< HEAD
 from convlab2.policy.rlmodule import EpsilonGreedyPolicy, MemoryReplay, SoftmaxPolicy
-=======
-from convlab2.policy.rlmodule import EpsilonGreedyPolicy, MemoryReplay
->>>>>>> master
 from convlab2.util.train_util import init_logging_handler
 from convlab2.policy.vector.vector_multiwoz import MultiWozVector
 from convlab2.util.file_util import cached_path
 import zipfile
 import sys
-<<<<<<< HEAD
-import matplotlib.pyplot as plt
-=======
->>>>>>> master
 
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.append(root_dir)
@@ -31,15 +23,9 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class DQN(Policy):
 
-<<<<<<< HEAD
     def __init__(self, is_train=False, dataset='Multiwoz', domains=None):
 
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config_tau.json'), 'r') as f:
-=======
-    def __init__(self, is_train=False, dataset='Multiwoz'):
-
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json'), 'r') as f:
->>>>>>> master
             cfg = json.load(f)
         self.save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), cfg['save_dir'])
         self.save_per_epoch = cfg['save_per_epoch']
@@ -47,10 +33,7 @@ class DQN(Policy):
         self.training_batch_iter = cfg['training_batch_iter']
         self.batch_size = cfg['batch_size']
         self.gamma = cfg['gamma']
-<<<<<<< HEAD
         self.update_frequency = cfg['update_frequency']
-=======
->>>>>>> master
         self.is_train = is_train
         if is_train:
             init_logging_handler(os.path.join(os.path.dirname(os.path.abspath(__file__)), cfg['log_dir']))
@@ -59,39 +42,18 @@ class DQN(Policy):
         if dataset == 'Multiwoz':
             voc_file = os.path.join(root_dir, 'data/multiwoz/sys_da_voc.txt')
             voc_opp_file = os.path.join(root_dir, 'data/multiwoz/usr_da_voc.txt')
-<<<<<<< HEAD
             self.vector = MultiWozVector(voc_file, voc_opp_file, composite_actions=True, vocab_size=cfg['vocab_size'], domains=domains)
 
         self.net = SoftmaxPolicy(self.vector.state_dim, cfg['h_dim'], self.vector.da_dim, cfg['tau_spec']).to(device=DEVICE)
         self.target_net = copy.deepcopy(self.net)
 
         self.online_net = self.net
-=======
-            self.vector = MultiWozVector(voc_file, voc_opp_file, composite_actions=True, vocab_size=cfg['vocab_size'])
-
-        #replay memory
-        self.memory = MemoryReplay(cfg['memory_size'])
-
-        self.net = EpsilonGreedyPolicy(self.vector.state_dim, cfg['hv_dim'], self.vector.da_dim, cfg['epsilon_spec']).to(device=DEVICE)
-        self.target_net = copy.deepcopy(self.net)
-
-        self.online_net = self.target_net
->>>>>>> master
         self.eval_net = self.target_net
 
         if is_train:
             self.net_optim = optim.Adam(self.net.parameters(), lr=cfg['lr'])
-<<<<<<< HEAD
             self.loss_fn = nn.MSELoss()
 
-=======
-
-        self.loss_fn = nn.MSELoss()
-
-    def update_memory(self, sample):
-        self.memory.append(sample)
-
->>>>>>> master
     def predict(self, state):
         """
         Predict an system action given state.
@@ -101,11 +63,7 @@ class DQN(Policy):
             action : System act, with the form of (act_type, {slot_name_1: value_1, slot_name_2, value_2, ...})
         """
         s_vec = torch.Tensor(self.vector.state_vectorize(state))
-<<<<<<< HEAD
         a = self.net.select_action(s_vec.to(device=DEVICE), self.is_train)
-=======
-        a = self.net.select_action(s_vec.to(device=DEVICE))
->>>>>>> master
 
         action = self.vector.action_devectorize(a.numpy())
 
@@ -116,12 +74,6 @@ class DQN(Policy):
         """
         Restore after one session
         """
-<<<<<<< HEAD
-
-=======
-        self.memory.reset()
-
->>>>>>> master
     def calc_q_loss(self, batch):
         '''Compute the Q value loss using predicted and target Q values from the appropriate networks'''
         s = torch.from_numpy(np.stack(batch.state)).to(device=DEVICE)
