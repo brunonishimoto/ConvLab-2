@@ -60,7 +60,6 @@ class DiscretePolicy(nn.Module):
         log_prob = torch.log(trg_a_probs)
 
         return log_prob
-
 class EpsilonGreedyPolicy(nn.Module):
     def __init__(self, s_dim, h_dim, a_dim, epsilon_spec={'start': 0.1, 'end': 0.0, 'end_epoch': 200}):
         super(EpsilonGreedyPolicy, self).__init__()
