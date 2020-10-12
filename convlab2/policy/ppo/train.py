@@ -7,8 +7,11 @@ import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import numpy as np
 import torch
+import logging
+import random
 from torch import multiprocessing as mp
 from convlab2.dialog_agent.agent import PipelineAgent
+from convlab2.dialog_agent.session import BiSession
 from convlab2.dialog_agent.env import Environment
 from convlab2.nlu.svm.multiwoz import SVMNLU
 from convlab2.dst.rule.multiwoz import RuleDST
@@ -49,11 +52,14 @@ def sampler(pid, queue, evt, env, policy, batchsz):
     sampled_traj_num = 0
     traj_len = 50
     real_traj_len = 0
+    info = {'success': [], 'rewards': [], 'turns': []}
+    success = []
+    rewards = []
 
     while sampled_num < batchsz:
         # for each trajectory, we reset the env and get initial state
         s = env.reset()
-
+        total_reward = 0
         for t in range(traj_len):
 
             # [s_dim] => [a_dim]
@@ -76,7 +82,11 @@ def sampler(pid, queue, evt, env, policy, batchsz):
             s = next_s
             real_traj_len = t + 1
 
+            total_reward += r
             if done:
+                info['success'].append(env.usr.policy.policy.goal.task_complete())
+                info['rewards'].append(total_reward)
+                info['turns'].append(2 * real_traj_len)
                 break
 
         # this is end of one trajectory
@@ -86,7 +96,7 @@ def sampler(pid, queue, evt, env, policy, batchsz):
 
     # this is end of sampling all batchsz of items.
     # when sampling is over, push all buff data into queue
-    queue.put([pid, buff])
+    queue.put([pid, buff, info])
     evt.wait()
 
 
@@ -125,17 +135,62 @@ def sample(env, policy, batchsz, process_num):
         p.start()
 
     # we need to get the first Memory object and then merge others Memory use its append function.
-    pid0, buff0 = queue.get()
+    pid0, buff0, info0 = queue.get()
     for _ in range(1, process_num):
-        pid, buff_ = queue.get()
+        pid, buff_, info_ = queue.get()
         buff0.append(buff_)  # merge current Memory into buff0
+        info0['success'].extend(info_['success'])
+        info0['rewards'].extend(info_['rewards'])
+        info0['turns'].extend(info_['turns'])
     evt.set()
 
     # now buff saves all the sampled data
     buff = buff0
 
+    logging.info(f'batch success rate: {sum(info0["success"]) / len(info0["success"])}')
+    logging.info(f'batch avg reward: {sum(info0["rewards"]) / len(info0["rewards"])}')
+    logging.info(f'batch avg turns: {sum(info0["turns"]) / len(info0["turns"])}')
+
     return buff.get_batch()
 
+def evaluate(policy_sys, dst_sys, simulator, domains):
+    seed = 20190827
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    policy_sys.eval()
+
+    agent_sys = PipelineAgent(None, dst_sys, policy_sys, None, 'sys')
+
+    evaluator = MultiWozEvaluator(domains=domains)
+    sess = BiSession(agent_sys, simulator, None, evaluator)
+
+    task_success = {'All': []}
+    for seed in range(100):
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        sess.init_session()
+        sys_response = []
+        for i in range(40):
+            sys_response, user_response, session_over, reward = sess.next_turn(sys_response)
+            if session_over is True:
+                task_succ = sess.evaluator.task_success()
+                break
+        else:
+            task_succ = 0
+
+        for key in sess.evaluator.goal:
+            if key not in task_success:
+                task_success[key] = []
+            task_success[key].append(task_succ)
+        task_success['All'].append(task_succ)
+
+    for key in task_success:
+        logging.info(f'{key} {len(task_success[key])} {np.average(task_success[key]) if len(task_success[key]) > 0 else 0}')
+
+    policy_sys.train()
 
 def update(env, policy, batchsz, epoch, process_num):
     # sample data asynchronously
@@ -157,27 +212,32 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument("--load_path", type=str, default="", help="path of model to load")
     parser.add_argument("--batchsz", type=int, default=1024, help="batch size of trajactory sampling")
-    parser.add_argument("--epoch", type=int, default=200, help="number of epochs to train")
-    parser.add_argument("--process_num", type=int, default=8, help="number of processes of trajactory sampling")
+    parser.add_argument("--epoch", type=int, default=100, help="number of epochs to train")
+    parser.add_argument("--process_num", type=int, default=4, help="number of processes of trajactory sampling")
     args = parser.parse_args()
 
     # simple rule DST
     dst_sys = RuleDST()
 
-    domains = ['restaurant']
+    domains = ['taxi']
+    # domains = None
 
-    policy_sys = PPO(True, domains=domains)
+    policy_sys = PPO(True, domains=None)
     policy_sys.load(args.load_path)
 
     # not use dst
     dst_usr = None
     # rule policy
-    policy_usr = RulePolicy(character='usr', domain=set(domains))
+    policy_usr = RulePolicy(character='usr', domains=domains)
     # assemble
     simulator = PipelineAgent(None, None, policy_usr, None, 'user')
 
-    evaluator = MultiWozEvaluator()
+    # evaluator = MultiWozEvaluator(domains=domains)
+    evaluator = None
     env = Environment(None, simulator, None, dst_sys, evaluator)
 
     for i in range(args.epoch):
         update(env, policy_sys, args.batchsz, i, args.process_num)
+        if (i+1) % 5 == 0:
+            logging.info(f"Evaluating: epoch {i}")
+            evaluate(policy_sys, dst_sys, simulator, domains)

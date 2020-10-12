@@ -47,7 +47,7 @@ class PPO(Policy):
         if is_train:
             self.policy_optim = optim.RMSprop(self.policy.parameters(), lr=cfg['policy_lr'])
             self.value_optim = optim.Adam(self.value.parameters(), lr=cfg['value_lr'])
-        
+
     def predict(self, state):
         """
         Predict an system action given state.
@@ -57,7 +57,7 @@ class PPO(Policy):
             action : System act, with the form of (act_type, {slot_name_1: value_1, slot_name_2, value_2, ...})
         """
         s_vec = torch.Tensor(self.vector.state_vectorize(state))
-        a = self.policy.select_action(s_vec.to(device=DEVICE), False).cpu()
+        a = self.policy.select_action(s_vec.to(device=DEVICE), self.is_train).cpu()
         action = self.vector.action_devectorize(a.numpy())
         state['system_action'] = action
         return action
@@ -67,7 +67,7 @@ class PPO(Policy):
         Restore after one session
         """
         pass
-    
+
     def est_adv(self, r, v, mask):
         """
         we save a trajectory in continuous space and it reaches the ending of current trajectory when mask=0.
@@ -111,17 +111,17 @@ class PPO(Policy):
         A_sa = (A_sa - A_sa.mean()) / A_sa.std()
 
         return A_sa, v_target
-    
+
     def update(self, epoch, batchsz, s, a, r, mask):
         # get estimated V(s) and PI_old(s, a)
         # actually, PI_old(s, a) can be saved when interacting with env, so as to save the time of one forward elapsed
         # v: [b, 1] => [b]
         v = self.value(s).squeeze(-1).detach()
         log_pi_old_sa = self.policy.get_log_prob(s, a).detach()
-        
+
         # estimate advantage and v_target according to GAE and Bellman Equation
         A_sa, v_target = self.est_adv(r, v, mask)
-        
+
         for i in range(self.update_round):
 
             # 1. shuffle current batch
@@ -149,7 +149,7 @@ class PPO(Policy):
                 v_b = self.value(s_b).squeeze(-1)
                 loss = (v_b - v_target_b).pow(2).mean()
                 value_loss += loss.item()
-                
+
                 # backprop
                 loss.backward()
                 # nn.utils.clip_grad_norm(self.value.parameters(), 4)
@@ -186,7 +186,7 @@ class PPO(Policy):
                 # self.lock.acquire() # retain lock to update weights
                 self.policy_optim.step()
                 # self.lock.release() # release lock
-            
+
             value_loss /= optim_chunk_num
             policy_loss /= optim_chunk_num
             logging.debug('<<dialog policy ppo>> epoch {}, iteration {}, value, loss {}'.format(epoch, i, value_loss))
@@ -194,7 +194,13 @@ class PPO(Policy):
 
         if (epoch+1) % self.save_per_epoch == 0:
             self.save(self.save_dir, epoch)
-    
+
+    def eval(self):
+        self.is_train = False
+
+    def train(self):
+        self.is_train = True
+
     def save(self, directory, epoch):
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -203,7 +209,7 @@ class PPO(Policy):
         torch.save(self.policy.state_dict(), directory + '/' + str(epoch) + '_ppo.pol.mdl')
 
         logging.info('<<dialog policy>> epoch {}: saved network to mdl'.format(epoch))
-    
+
     def load(self, filename):
         value_mdl_candidates = [
             filename + '.val.mdl',
@@ -216,7 +222,7 @@ class PPO(Policy):
                 self.value.load_state_dict(torch.load(value_mdl, map_location=DEVICE))
                 logging.info('<<dialog policy>> loaded checkpoint from file: {}'.format(value_mdl))
                 break
-        
+
         policy_mdl_candidates = [
             filename + '.pol.mdl',
             filename + '_ppo.pol.mdl',

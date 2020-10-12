@@ -50,6 +50,10 @@ class MultiWozVector(Vector):
         self.requestable = intents['requestable']
         self.db = Database(domains=domains)
 
+        self.all_booking_slots = ['Ref', 'none', 'Name']
+        for domain in self.belief_domains:
+            self.all_booking_slots.extend(booking_info.get(domain, []))
+
         with open(voc_file) as f:
             self.da_voc = f.read().splitlines()
         with open(voc_opp_file) as f:
@@ -78,14 +82,10 @@ class MultiWozVector(Vector):
     def is_in_domains(self, da):
         in_domain = True
 
-        all_booking_slots = ['Ref']
-        for domain in self.belief_domains:
-            all_booking_slots.extend(booking_info.get(domain, []))
-
         actions = da.split(';')
         for action in actions:
             domain, intent, slot, value = action.split('-')
-            if domain.capitalize() not in self.belief_domains and domain != 'general' and not (domain.capitalize() == 'Booking' and slot in all_booking_slots):
+            if domain.capitalize() not in self.belief_domains and domain != 'general' and not (domain.capitalize() == 'Booking' and slot in self.all_booking_slots):
                 in_domain = False
                 break
 
@@ -282,18 +282,20 @@ class MultiWozVector(Vector):
         action = flat_da(action)
         act_vec = np.zeros(self.da_dim)
 
-        if self.composite_actions:
-            for act in self.act2vec:
-                if action == act.split(';'):
-                    act_vec[self.act2vec[act]] = 1.
-                    break
+        if action:
+            if self.composite_actions:
+                for act in self.act2vec:
+                    if action == act.split(';'):
+                        act_vec[self.act2vec[act]] = 1.
+                        break
+                else:
+                    most_similar_action = self.find_closest_action(action)
+                    if most_similar_action:
+                        act_vec[self.act2vec[most_similar_action]] = 1.
             else:
-                most_similar_action = self.find_closest_action(action)
-                act_vec[self.act2vec[most_similar_action]] = 1.
-        else:
-            for da in action:
-                if da in self.act2vec:
-                    act_vec[self.act2vec[da]] = 1.
+                for da in action:
+                    if da in self.act2vec:
+                        act_vec[self.act2vec[da]] = 1.
         return act_vec
 
     def find_closest_action(self, action):
@@ -316,4 +318,4 @@ class MultiWozVector(Vector):
                 elif length == smaller_length:
                     candidates.append(da)
 
-        return np.random.choice(candidates)
+        return np.random.choice(candidates) if candidates else None

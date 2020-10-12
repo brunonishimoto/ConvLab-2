@@ -54,14 +54,14 @@ class UserPolicyAgendaMultiWoz(Policy):
         Constructor for User_Policy_Agenda class.
         """
         self.max_turn = 20
-        self.max_initiative = 1
+        self.max_initiative = 2
 
         self.goal_generator = GoalGenerator()
 
         self.__turn = 0
         self.goal = None
         self.agenda = None
-        self.domains = set(domains) if domains else None
+        self.domains = tuple(domains) if domains else None
 
         Policy.__init__(self)
 
