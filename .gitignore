@@ -53,11 +53,11 @@ convlab2/nlu/milu/multiwoz/configs/user_without_context.jsonnet
 *_test.py
 
 # log
-**/log/**
+**/log*/**
 *.log
 
 # save
-**/save/**
+**/save*/**
 
 # .bak.py
 *.bak.py
