@@ -153,13 +153,16 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
+    # domains = ['restaurant']
+    domains = None
+
     if dataset_name == 'MultiWOZ':
         dst_sys = RuleDST()
 
         if model_name == "PPO":
             from convlab2.policy.ppo import PPO
             if load_path:
-                policy_sys = PPO(False)
+                policy_sys = PPO(False, domains=domains)
                 policy_sys.load(load_path)
             else:
                 policy_sys = PPO.from_pretrained()
@@ -184,10 +187,25 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True):
                 policy_sys.load(load_path)
             else:
                 policy_sys = GDPL.from_pretrained()
+        elif model_name == "DQN":
+            from convlab2.policy.dqn import DQN
+            if load_path:
+                policy_sys = DQN(False, domains=domains)
+                policy_sys.load(load_path)
+            else:
+                policy_sys = DQN.from_pretrained()
+        elif model_name == "MA":
+            from convlab2.policy.multiple_agents import MultipleAgents
+            # if load_path:
+            policy_sys = MultipleAgents(False)
+                # policy_sys.load(load_path)
+            # else:
+            #     policy_sys = DQN.from_pretrained()
+
 
         dst_usr = None
 
-        policy_usr = RulePolicy(character='usr')
+        policy_usr = RulePolicy(character='usr', domains=domains)
         simulator = PipelineAgent(None, None, policy_usr, None, 'user')
 
         env = Environment(None, simulator, None, dst_sys)
@@ -236,7 +254,6 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True):
                 value = []
                 mask = []
                 for t in range(40):
-                    s_vec = torch.Tensor(policy_sys.vector.state_vectorize(s))
                     a = policy_sys.predict(s)
 
                     # interact with env
