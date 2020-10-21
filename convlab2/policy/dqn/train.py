@@ -191,7 +191,7 @@ def run_warmup(env, policy, batchsz, warmup_epoch, process_num, experience_repla
     # policy_sys.update(warmup_epoch, experience_replay)
 
 def evaluate(policy_sys, dst_sys, simulator, domains):
-    seed = 20201015
+    seed = 20190827
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)

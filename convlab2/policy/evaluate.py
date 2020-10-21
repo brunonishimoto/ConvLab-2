@@ -147,14 +147,11 @@ def sample(env, policy, batchsz, process_num):
 
     return buff.get_batch()
 
-def evaluate(dataset_name, model_name, load_path, calculate_reward=True):
+def evaluate(dataset_name, model_name, load_path, calculate_reward=True, domains=None):
     seed = 20190827
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-
-    # domains = ['restaurant']
-    domains = None
 
     if dataset_name == 'MultiWOZ':
         dst_sys = RuleDST()
@@ -201,6 +198,13 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True):
                 # policy_sys.load(load_path)
             # else:
             #     policy_sys = DQN.from_pretrained()
+        elif model_name == "PPOfD":
+            from convlab2.policy.ppofd import PPOfD
+            if load_path:
+                policy_sys = PPOfD(False, domains=domains)
+                policy_sys.load(load_path)
+            else:
+                policy_sys = PPOfD.from_pretrained()
 
 
         dst_usr = None
@@ -212,7 +216,7 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True):
 
         agent_sys = PipelineAgent(None, dst_sys, policy_sys, None, 'sys')
 
-        evaluator = MultiWozEvaluator()
+        evaluator = MultiWozEvaluator(domains=domains)
         sess = BiSession(agent_sys, simulator, None, evaluator)
 
         task_success = {'All': []}
@@ -275,12 +279,19 @@ if __name__ == "__main__":
     parser.add_argument("--load_path", type=str, default='', help="path of model")
     parser.add_argument("--log_path_suffix", type=str, default="", help="suffix of path of log file")
     parser.add_argument("--log_dir_path", type=str, default="log", help="path of log directory")
+    parser.add_argument("--domain", type=str, default="all", help="domain to train")
     args = parser.parse_args()
+
+    if args.domain == 'all':
+        domains = None
+    else:
+        domains = [args.domain]
 
     init_logging(log_dir_path=args.log_dir_path, path_suffix=args.log_path_suffix)
     evaluate(
         dataset_name=args.dataset_name,
         model_name=args.model_name,
         load_path=args.load_path,
-        calculate_reward=True
+        calculate_reward=True,
+        domains=domains
     )

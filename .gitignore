@@ -59,6 +59,9 @@ convlab2/nlu/milu/multiwoz/configs/user_without_context.jsonnet
 # save
 **/save*/**
 
+# checkpoints
+**/checkpoints/**
+
 # .bak.py
 *.bak.py
 
