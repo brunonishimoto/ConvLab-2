@@ -23,10 +23,19 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class DQN(Policy):
 
-    def __init__(self, is_train=False, dataset='Multiwoz', domains=None):
+    def __init__(self, is_train=False, dataset='Multiwoz', domains=None, **kwargs):
 
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config_tau.json'), 'r') as f:
             cfg = json.load(f)
+
+        exp = kwargs.get('exp')
+        if domains:
+            cfg['save_dir'] = f"{cfg['save_dir']}/{domains[0]}/{exp}"
+            cfg['log_dir'] = f"{cfg['log_dir']}/{domains[0]}/{exp}"
+        else:
+            cfg['save_dir'] = f"{cfg['save_dir']}/all/{exp}"
+            cfg['log_dir'] = f"{cfg['log_dir']}/all/{exp}"
+
         self.save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), cfg['save_dir'])
         self.save_per_epoch = cfg['save_per_epoch']
         self.training_iter = cfg['training_iter']
@@ -118,7 +127,7 @@ class DQN(Policy):
 
             # logging.debug('<<dialog policy dqn>> epoch {}, iteration {}, loss {}'.format(epoch, i, round_loss / self.training_batch_iter))
         total_loss /= (self.training_batch_iter * self.training_iter)
-        logging.debug('<<dialog policy dqn>> epoch {}, total_loss {}'.format(epoch, total_loss))
+        logging.info('<<dialog policy dqn>> epoch {}, total_loss {}'.format(epoch, total_loss))
 
         # update the epsilon value
         if self.is_train:
