@@ -148,7 +148,7 @@ def sample(env, policy, batchsz, process_num):
     return buff.get_batch()
 
 def evaluate(dataset_name, model_name, load_path, calculate_reward=True, domains=None):
-    seed = 20190827
+    seed = 20201015
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)

@@ -53,7 +53,7 @@ class UserPolicyAgendaMultiWoz(Policy):
         """
         Constructor for User_Policy_Agenda class.
         """
-        self.max_turn = 20
+        self.max_turn = 40
         self.max_initiative = 2
 
         self.goal_generator = GoalGenerator()

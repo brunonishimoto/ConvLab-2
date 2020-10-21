@@ -21,10 +21,19 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class PPO(Policy):
 
-    def __init__(self, is_train=False, dataset='Multiwoz', domains=None):
+    def __init__(self, is_train=False, dataset='Multiwoz', domains=None, **kwargs):
 
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json'), 'r') as f:
             cfg = json.load(f)
+
+        exp = kwargs.get('exp')
+        if domains:
+            cfg['save_dir'] = f"{cfg['save_dir']}/{domains[0]}/{exp}"
+            cfg['log_dir'] = f"{cfg['log_dir']}/{domains[0]}/{exp}"
+        else:
+            cfg['save_dir'] = f"{cfg['save_dir']}/all/{exp}"
+            cfg['log_dir'] = f"{cfg['log_dir']}/all/{exp}"
+
         self.save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), cfg['save_dir'])
         self.save_per_epoch = cfg['save_per_epoch']
         self.update_round = cfg['update_round']
@@ -189,8 +198,8 @@ class PPO(Policy):
 
             value_loss /= optim_chunk_num
             policy_loss /= optim_chunk_num
-            logging.debug('<<dialog policy ppo>> epoch {}, iteration {}, value, loss {}'.format(epoch, i, value_loss))
-            logging.debug('<<dialog policy ppo>> epoch {}, iteration {}, policy, loss {}'.format(epoch, i, policy_loss))
+            logging.info('<<dialog policy ppo>> epoch {}, iteration {}, value, loss {}'.format(epoch, i, value_loss))
+            logging.info('<<dialog policy ppo>> epoch {}, iteration {}, policy, loss {}'.format(epoch, i, policy_loss))
 
         if (epoch+1) % self.save_per_epoch == 0:
             self.save(self.save_dir, epoch)
