@@ -1,12 +1,18 @@
 import os
 import json
 import zipfile
+from copy import deepcopy
 
 from convlab2 import DATA_ROOT
 
 
+def get_subdir(subtask):
+    subdir = 'multiwoz_zh' if subtask == 'multiwoz' else 'crosswoz_en'
+    return subdir
+
+
 def prepare_data(subtask, split, data_root=DATA_ROOT):
-    data_dir = os.path.join(data_root, 'multiwoz_zh' if subtask == 'multiwoz' else 'crosswoz_en')
+    data_dir = os.path.join(data_root, get_subdir(subtask))
     zip_filename = os.path.join(data_dir, f'{split}.json.zip')
     test_data = json.load(zipfile.ZipFile(zip_filename).open(f'{split}.json'))
     data = {}
@@ -36,12 +42,10 @@ def prepare_data(subtask, split, data_root=DATA_ROOT):
                 sys_utt = turns[i - 1]['content'] if i else None
                 user_utt = turns[i]['content']
                 state = {}
-                for domain_name, domain in turns[i + 1]['sys_state_init'].items():
-                    domain_state = {}
-                    for slot_name, value in domain.items():
-                        if slot_name == 'selectedResults':
-                            continue
-                        domain_state[slot_name] = value
+                for domain_name, domain_state in turns[i + 1]['sys_state_init'].items():
+                    selected_results = domain_state.pop('selectedResults')
+                    if selected_results and 'name' in domain_state and not domain_state['name']:
+                        domain_state['name'] = selected_results
                     state[domain_name] = domain_state
                 dialog_data.append((sys_utt, user_utt, state))
             data[dialog_id] = dialog_data
@@ -57,7 +61,30 @@ def extract_gt(test_data):
     return gt
 
 
-def eval_states(gt, pred):
+# for unifying values with the same meaning to the same expression
+def unify_value(value, subtask):
+    if isinstance(value, list):
+        ret = deepcopy(value)
+        for i, v in enumerate(ret):
+            ret[i] = unify_value(v, subtask)
+        return ret
+
+    value = {
+        'multiwoz': {
+            '未提及': '',
+            'none': '',
+            '是的': '有',
+            '不是': '没有',
+        },
+        'crosswoz': {
+            'None': '',
+        }
+    }[subtask].get(value, value)
+
+    return ' '.join(value.strip().split())
+
+
+def eval_states(gt, pred, subtask):
     def exception(description, **kargs):
         ret = {
             'status': 'exception',
@@ -89,35 +116,31 @@ def eval_states(gt, pred):
                 for slot_name, gt_value in gt_domain.items():
                     if slot_name not in pred_domain:
                         return exception('slot missing', dialog_id=dialog_id, turn_id=turn_id, domain=domain_name, slot=slot_name)
-                    pred_value = pred_domain[slot_name]
+                    gt_value = unify_value(gt_value, subtask)
+                    pred_value = unify_value(pred_domain[slot_name], subtask)
                     slot_tot += 1
-                    if gt_value == pred_value:
+                    if gt_value == pred_value or isinstance(gt_value, list) and pred_value in gt_value:
                         slot_acc += 1
-                        tp += 1
+                        if gt_value:
+                            tp += 1
                     else:
                         turn_result = False
-                        # for class of gt_value
-                        fn += 1
-                        # for class of pred_value
-                        fp += 1
+                        if gt_value:
+                            fn += 1
+                        if pred_value:
+                            fp += 1
             joint_acc += turn_result
 
-    precision = tp / (tp + fp)
-    recall = tp / (tp + fn)
-    f1 = 2 * tp / (2 * tp + fp + fn)
+    precision = tp / (tp + fp) if tp + fp else 1
+    recall = tp / (tp + fn) if tp + fn else 1
+    f1 = 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) else 1
     return {
         'status': 'ok',
         'joint accuracy': joint_acc / joint_tot,
-        'slot accuracy': slot_acc / slot_tot,
-        # 'slot': {
-        #     'accuracy': slot_acc / slot_tot,
-        #     'precision': precision,
-        #     'recall': recall,
-        #     'f1': f1,
-        # }
+        'slot': {
+            'accuracy': slot_acc / slot_tot,
+            'precision': precision,
+            'recall': recall,
+            'f1': f1,
+        }
     }
-
-
-def get_subdir(subtask):
-    subdir = 'multiwoz_zh' if subtask == 'multiwoz' else 'crosswoz_en'
-    return subdir
