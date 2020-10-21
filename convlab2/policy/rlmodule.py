@@ -320,6 +320,8 @@ class Value(nn.Module):
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'mask'))
 
+ExpertTransition = namedtuple('ExpertTransition', ('state', 'action', 'reward', 'next_state', 'mask', 'action_expert'))
+
 class Memory(object):
 
     def __init__(self):
@@ -335,6 +337,28 @@ class Memory(object):
         else:
             random_batch = random.sample(self.memory, batch_size)
             return Transition(*zip(*random_batch))
+
+    def append(self, new_memory):
+        self.memory += new_memory.memory
+
+    def __len__(self):
+        return len(self.memory)
+
+class ExpertMemory(object):
+
+    def __init__(self):
+        self.memory = []
+
+    def push(self, *args):
+        """Saves a transition."""
+        self.memory.append(ExpertTransition(*args))
+
+    def get_batch(self, batch_size=None):
+        if batch_size is None:
+            return ExpertTransition(*zip(*self.memory))
+        else:
+            random_batch = random.sample(self.memory, batch_size)
+            return ExpertTransition(*zip(*random_batch))
 
     def append(self, new_memory):
         self.memory += new_memory.memory
