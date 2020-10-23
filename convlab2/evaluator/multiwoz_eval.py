@@ -41,7 +41,7 @@ class MultiWozEvaluator(Evaluator):
         self.booked = {}
         self.database = Database(domains)
         self.dbs = self.database.dbs
-        self.belief_domains = list(set(requestable.keys()) & set(domains))
+        self.belief_domains = list(set(requestable.keys()) & set(domains)) if domains else requestable.keys()
 
     def _init_dict(self):
         dic = {}
@@ -92,7 +92,7 @@ class MultiWozEvaluator(Evaluator):
         for intent, domain, slot, value in da_turn:
             dom_int = '-'.join([domain, intent])
             domain = dom_int.split('-')[0].lower()
-            if domain in belief_domains and domain != self.cur_domain:
+            if domain in self.belief_domains and domain != self.cur_domain:
                 self.cur_domain = domain
             da = (dom_int + '-' + slot).lower()
             value = str(value)
@@ -121,7 +121,7 @@ class MultiWozEvaluator(Evaluator):
         for intent, domain, slot, value in da_turn:
             dom_int = '-'.join([domain, intent])
             domain = dom_int.split('-')[0].lower()
-            if domain in belief_domains and domain != self.cur_domain:
+            if domain in self.belief_domains and domain != self.cur_domain:
                 self.cur_domain = domain
             da = (dom_int + '-' + slot).lower()
             value = str(value)
@@ -132,7 +132,7 @@ class MultiWozEvaluator(Evaluator):
         judge if the selected entity meets the constraint
         """
         if domains is None:
-            domains = belief_domains
+            domains = self.belief_domains
         score = []
         for domain in domains:
             if 'book' in goal[domain] and goal[domain]['book']:
@@ -179,7 +179,7 @@ class MultiWozEvaluator(Evaluator):
         judge if all the requested information is answered
         """
         if domains is None:
-            domains = belief_domains
+            domains = self.belief_domains
         inform_slot = {}
         for domain in domains:
             inform_slot[domain] = set()
@@ -252,7 +252,7 @@ class MultiWozEvaluator(Evaluator):
             goal = self._expand(self.goal)
         else:
             goal = self._init_dict()
-            for domain in belief_domains:
+            for domain in self.belief_domains:
                 if domain in self.goal and 'book' in self.goal[domain]:
                     goal[domain]['book'] = self.goal[domain]['book']
             for da in self.usr_da_array:
