@@ -37,6 +37,7 @@ class MultiWozVector(Vector):
                  composite_actions=False,
                  vocab_size=500):
 
+        self.domains = domains
         self.belief_domains = [d.capitalize() for d in domains] if domains else['Attraction', 'Restaurant', 'Train', 'Hotel', 'Taxi', 'Hospital', 'Police']
         self.db_domains = list(set(['Attraction', 'Restaurant', 'Train', 'Hotel']) & set(self.belief_domains))
 
@@ -62,7 +63,7 @@ class MultiWozVector(Vector):
         self.da_voc_opp = self.filter_da_by_domains(self.da_voc_opp)
 
         if self.composite_actions:
-            self.da_voc = [da for da in self.da_voc if not da.endswith(('2', '3'))]
+            self.da_voc = [da for da in self.da_voc if not da.endswith(('2', '3', '4', '5'))]
             self.load_composite_actions()
 
 
@@ -119,7 +120,7 @@ class MultiWozVector(Vector):
 
         self.belief_state_dim = 0
         for domain in self.belief_domains:
-            for slot, value in default_state()['belief_state'][domain.lower()]['semi'].items():
+            for slot, value in default_state(self.domains)['belief_state'][domain.lower()]['semi'].items():
                 self.belief_state_dim += 1
 
         self.state_dim = self.da_opp_dim + self.da_dim + self.belief_state_dim + \

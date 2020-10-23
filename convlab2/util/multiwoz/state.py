@@ -1,4 +1,4 @@
-def default_state():
+def default_state(domains=None):
     state = dict(user_action=[],
                  system_action=[],
                  belief_state={},
@@ -86,4 +86,7 @@ def default_state():
             }
         }
     }
+    if domains:
+        for domain in set(state['belief_state'].keys()) - set(domains):
+            state['belief_state'].pop(domain)
     return state
