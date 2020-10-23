@@ -16,8 +16,6 @@ requestable = \
      'hospital': ['post', 'phone', 'addr'],
      'police': ['addr', 'post', 'phone']}
 
-belief_domains = requestable.keys()
-
 mapping = {'restaurant': {'addr': 'address', 'area': 'area', 'food': 'food', 'name': 'name', 'phone': 'phone',
                           'post': 'postcode', 'price': 'pricerange'},
            'hotel': {'addr': 'address', 'area': 'area', 'internet': 'internet', 'parking': 'parking', 'name': 'name',
@@ -43,22 +41,23 @@ class MultiWozEvaluator(Evaluator):
         self.booked = {}
         self.database = Database(domains)
         self.dbs = self.database.dbs
+        self.belief_domains = list(set(requestable.keys()) & set(domains))
 
     def _init_dict(self):
         dic = {}
-        for domain in belief_domains:
+        for domain in self.belief_domains:
             dic[domain] = {'info': {}, 'book': {}, 'reqt': []}
         return dic
 
     def _init_dict_booked(self):
         dic = {}
-        for domain in belief_domains:
+        for domain in self.belief_domains:
             dic[domain] = None
         return dic
 
     def _expand(self, _goal):
         goal = deepcopy(_goal)
-        for domain in belief_domains:
+        for domain in self.belief_domains:
             if domain not in goal:
                 goal[domain] = {'info': {}, 'book': {}, 'reqt': []}
                 continue
