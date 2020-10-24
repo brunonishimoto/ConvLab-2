@@ -111,8 +111,7 @@ def sampler(pid, queue, evt, env, policy, batchsz):
     queue.put([pid, buff, info])
     evt.wait()
 
-
-def sample(env, policy, batchsz, process_num):
+def sample(env, policy, batchsz, process_num, warm_up=False):
     """
     Given batchsz number of task, the batchsz will be splited equally to each processes
     and when processes return, it merge all data and return
@@ -188,7 +187,7 @@ def run_warmup(env, policy, batchsz, warmup_epoch, process_num, experience_repla
 
     experience_replay.append(buff)
 
-    # policy_sys.update(warmup_epoch, experience_replay)
+    policy_sys.update(warmup_epoch, experience_replay)
 
 def evaluate(policy_sys, dst_sys, simulator, domains):
     seed = 20201015
