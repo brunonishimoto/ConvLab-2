@@ -41,7 +41,7 @@ class MultiWozEvaluator(Evaluator):
         self.booked = {}
         self.database = Database(domains)
         self.dbs = self.database.dbs
-        self.belief_domains = list(set(requestable.keys()) & set(domains)) if domains else requestable.keys()
+        self.belief_domains = list(set(requestable.keys()) & set(domains)) if domains else list(requestable.keys())
 
     def _init_dict(self):
         dic = {}
