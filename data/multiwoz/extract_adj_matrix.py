@@ -84,5 +84,5 @@ if __name__ == '__main__':
     df = pd.DataFrame(data=adj_matrix, index=mapping.keys(), columns=mapping.keys())
     df.to_csv('adj_matrix.csv')
 
-    # df = pd.DataFrame(data=pair_counter, index=mapping.keys(), columns=mapping.keys())
-    # df.to_csv('pair_counter.csv')
+    json.dump(mapping, open('node2idx.json', 'w'), indent=2)
+    json.dump(inverse_mapping, open('idx2node.json', 'w'), indent=2)
