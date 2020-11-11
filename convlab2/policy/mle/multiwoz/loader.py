@@ -10,7 +10,7 @@ class ActMLEPolicyDataLoaderMultiWoz(ActMLEPolicyDataLoader):
         voc_opp_file = os.path.join(root_dir, 'data/multiwoz/usr_da_voc.txt')
         self.vector = MultiWozVector(voc_file, voc_opp_file, domains=cfg['domains'], composite_actions=cfg['composite_actions'], vocab_size=cfg['vocab_size'])
 
-        processed_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'processed_data')
+        processed_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), cfg['data_dir'])
         if os.path.exists(processed_dir):
             print('Load processed data file')
             self._load_data(processed_dir)

@@ -10,6 +10,7 @@ import torch
 import logging
 import random
 import json
+import copy
 from torch import multiprocessing as mp
 from convlab2.dialog_agent.agent import PipelineAgent
 from convlab2.dialog_agent.session import BiSession
@@ -77,7 +78,8 @@ def sampler(pid, queue, evt, env, policy, policy_expert, batchsz):
             # [s_dim] => [a_dim]
             s_vec = torch.Tensor(policy.vector.state_vectorize(s))
             a = policy.predict(s)
-            a_e = policy_expert.predict(s)
+            s_e = copy.deepcopy(s)
+            a_e = policy_expert.predict(s_e)
 
             # interact with env
             next_s, r, done = env.step(a)
@@ -97,7 +99,8 @@ def sampler(pid, queue, evt, env, policy, policy_expert, batchsz):
 
             total_reward += r
             if done:
-                info['success'].append(env.usr.policy.policy.goal.task_complete())
+                # info['success'].append(env.usr.policy.policy.goal.task_complete())
+                info['success'].append(env.evaluator.task_success())
                 info['rewards'].append(total_reward)
                 info['turns'].append(real_traj_len)
                 break
@@ -182,7 +185,8 @@ def evaluate(policy_sys, dst_sys, simulator, domains):
 
     agent_sys = PipelineAgent(None, dst_sys, policy_sys, None, 'sys')
 
-    evaluator = MultiWozEvaluator(domains=domains)
+    # evaluator = MultiWozEvaluator(domains=domains)
+    evaluator = None
     sess = BiSession(agent_sys, simulator, None, evaluator)
 
     task_success = {'All': []}
@@ -201,6 +205,7 @@ def evaluate(policy_sys, dst_sys, simulator, domains):
             total_reward += reward
             if session_over is True:
                 task_succ = sess.evaluator.task_success()
+                # task_succ = sess.user_agent.policy.policy.goal.task_complete()
                 rewards.append(total_reward)
                 turns.append(i)
                 break
@@ -209,10 +214,10 @@ def evaluate(policy_sys, dst_sys, simulator, domains):
             turns.append(40)
             task_succ = 0
 
-        for key in sess.evaluator.goal:
-            if key not in task_success:
-                task_success[key] = []
-            task_success[key].append(task_succ)
+        # for key in sess.evaluator.goal:
+        #     if key not in task_success:
+        #         task_success[key] = []
+        #     task_success[key].append(task_succ)
         task_success['All'].append(task_succ)
 
     for key in task_success:
@@ -283,8 +288,8 @@ if __name__ == '__main__':
         # assemble
         simulator = PipelineAgent(None, None, policy_usr, None, 'user')
 
-        # evaluator = MultiWozEvaluator(domains=domains)
-        evaluator = None
+        evaluator = MultiWozEvaluator(domains=domains)
+        # evaluator = None
         env = Environment(None, simulator, None, dst_sys, evaluator)
 
         performance_metrics = {

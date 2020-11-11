@@ -1,20 +1,19 @@
 {
 	"batch_size": 16,
-	"gamma": 0.99,
+	"gamma": 0.9,
 	"lr": 1e-3,
 	"save_dir": "save",
 	"log_dir": "log",
 	"save_per_epoch": 5,
 	"training_iter": 500,
 	"training_batch_iter": 1,
-	"update_frequency": 3,
-	"h_dim": 80,
-	"memory_size": 5000,
+	"update_frequency": 4,
+	"h_dim": 100,
 	"tau_spec": {
 		"start": 2.0,
 		"end": 0.5,
-		"end_epoch": 40
+		"end_epoch": 50
 	},
 	"load": "save/best",
-	"vocab_size": 100
+	"vocab_size": 300
 }

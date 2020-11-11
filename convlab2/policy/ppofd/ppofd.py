@@ -6,6 +6,7 @@ import numpy as np
 import logging
 import os
 import json
+import math
 from convlab2.policy.policy import Policy
 from convlab2.policy.rlmodule import MultiDiscretePolicy, Value
 from convlab2.util.train_util import init_logging_handler
@@ -125,6 +126,24 @@ class PPOfD(Policy):
 
         return A_sa, v_target
 
+    def compute_entropy(self, probs, base=None):
+        """ Computes entropy of label distribution. """
+        ent_list = []
+        base = math.e if base is None else base
+
+        for prob in probs:
+            ent = 0.
+            for a_prob in prob:
+                if a_prob == 1. or a_prob == 0.:
+                    continue
+
+                # Compute entropy
+                ent += -a_prob * math.log(a_prob, base) - (1 - a_prob) * math.log(1 - a_prob, base)
+
+            ent_list.append(ent.cpu() / len(prob))
+
+        return np.mean(ent_list)
+
     def update(self, epoch, batchsz, s, a, r, mask, a_exp):
         # get estimated V(s) and PI_old(s, a)
         # actually, PI_old(s, a) can be saved when interacting with env, so as to save the time of one forward elapsed
@@ -173,8 +192,13 @@ class PPOfD(Policy):
                 self.policy_optim.zero_grad()
 
                 # # imitation learning loss
-                # a_weights = self.policy(s)
-                # imitation_loss = self.imitation_loss(a_weights, a_exp)
+                a_weights = self.policy(s_b)
+                a_probs = torch.sigmoid(a_weights)
+
+                with torch.no_grad():
+                    entropy = self.compute_entropy(a_probs, 2)
+
+                imitation_loss = self.imitation_loss(a_probs, a_exp_b)
 
                 # [b, 1]
                 log_pi_sa = self.policy.get_log_prob(s_b, a_b)
@@ -192,13 +216,13 @@ class PPOfD(Policy):
                 # this is element-wise comparing.
                 # we add negative symbol to convert gradient ascent to gradient descent
                 surrogate = - torch.min(surrogate1, surrogate2).mean()
-                # policy_loss += surrogate.item() + imitation_loss.item()
-                policy_loss += surrogate.item()
+                policy_loss += (1 - entropy) *surrogate.item() + entropy * imitation_loss.item()
+                # policy_loss += surrogate.item()
 
                 # backprop
-                # loss = imitation_loss + surrogate
-                # loss.backward()
-                surrogate.backward()
+                loss = entropy * imitation_loss + (1 - entropy) * surrogate
+                loss.backward()
+                # surrogate.backward()
                 # although the ratio is clamped, the grad may still contain nan due to 0 * inf
                 # set the inf in the gradient to 0
                 for p in self.policy.parameters():

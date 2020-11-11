@@ -171,7 +171,7 @@ def sample(env, policy, batchsz, process_num):
 
     return buff.get_batch(), metrics
 
-def evaluate(policy_sys, dst_sys, simulator, domains):
+def evaluate(policy_sys, dst_sys, simulator, domains, evaluator):
     seed = 20201015
     random.seed(seed)
     np.random.seed(seed)
@@ -181,10 +181,10 @@ def evaluate(policy_sys, dst_sys, simulator, domains):
 
     agent_sys = PipelineAgent(None, dst_sys, policy_sys, None, 'sys')
 
-    evaluator = MultiWozEvaluator(domains=domains)
+    evaluator = evaluator if evaluator else MultiWozEvaluator(domains=domains)
     sess = BiSession(agent_sys, simulator, None, evaluator)
 
-    task_success = {'All': []}
+    task_success = {'All': [], 'User': []}
     rewards = []
     turns = []
 
@@ -200,6 +200,7 @@ def evaluate(policy_sys, dst_sys, simulator, domains):
             total_reward += reward
             if session_over is True:
                 task_succ = sess.evaluator.task_success()
+                task_succ1 = sess.user_agent.policy.policy.goal.task_complete()
                 rewards.append(total_reward)
                 turns.append(i)
                 break
@@ -207,12 +208,14 @@ def evaluate(policy_sys, dst_sys, simulator, domains):
             rewards.append(total_reward)
             turns.append(40)
             task_succ = 0
+            task_succ1 = 0
 
         for key in sess.evaluator.goal:
             if key not in task_success:
                 task_success[key] = []
             task_success[key].append(task_succ)
         task_success['All'].append(task_succ)
+        task_success['User'].append(task_succ1)
 
     for key in task_success:
         logging.info(f'{key} {len(task_success[key])} {np.average(task_success[key]) if len(task_success[key]) > 0 else 0}')
@@ -251,9 +254,7 @@ if __name__ == '__main__':
     parser.add_argument("--batchsz", type=int, default=100, help="batch size of trajactory sampling")
     parser.add_argument("--epoch", type=int, default=150, help="number of epochs to train")
     parser.add_argument("--process_num", type=int, default=4, help="number of processes of trajactory sampling")
-    parser.add_argument("--warm_up", type=int, default=10, help="number of warm_up episodes (0 if no warm_up)")
-    parser.add_argument("--mem_size", type=int, default=10000, help="size of experience replay")
-    parser.add_argument("--num_exp", type=int, default=10, help="number repeats for each experiences")
+    parser.add_argument("--num_exp", type=int, default=5, help="number repeats for each experiences")
     parser.add_argument("--domain", type=str, default="all", help="domain to train")
     args = parser.parse_args()
 
@@ -294,6 +295,7 @@ if __name__ == '__main__':
             'avg_turns': {}
         }
 
+        best_sucess = 0.
         for i in range(args.epoch):
             metrics = update(env, policy_sys, args.batchsz, i, args.process_num)
 
@@ -302,7 +304,12 @@ if __name__ == '__main__':
             performance_metrics['avg_turns'][i] = metrics['avg_turns']
 
             logging.info(f"Evaluating: epoch {i}")
-            metrics_test = evaluate(policy_sys, dst_sys, simulator, domains)
+            metrics_test = evaluate(policy_sys, dst_sys, simulator, domains, evaluator)
+
+            if metrics_test['success_rate'] > best_sucess:
+                policy_sys.save_best()
+                best_sucess = metrics_test['success_rate']
+                save_json_file(f'./checkpoints/{args.domain}/{exp}/best.json', metrics_test)
 
             performance_metrics_test['success_rate'][i] = metrics_test['success_rate']
             performance_metrics_test['avg_reward'][i] = metrics_test['avg_reward']

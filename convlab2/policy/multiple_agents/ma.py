@@ -15,6 +15,7 @@ from convlab2.policy.rlmodule import EpsilonGreedyPolicy, DiscretePolicy
 from convlab2.util.train_util import init_logging_handler
 from convlab2.policy.vector.vector_multiwoz import MultiWozVector
 from convlab2.util.file_util import cached_path
+from data.multiwoz.graph_embedding import GraphEmbedding
 import zipfile
 import sys
 
@@ -54,14 +55,19 @@ class MultipleAgents(Policy):
         self.cur_domains = []
         self.old_domains = []
 
+        if cfg['use_embedding']:
+            self.graph_embedding = GraphEmbedding(50)
+            self.graph_embedding.load_embedding(os.path.join(root_dir, 'data/multiwoz/embeddings_all.mdl'))
+            self.embeddings = self.graph_embedding.load_embedding
+
         self.agents = []
         for domain in DOMAINS:
             if cfg['policy'] == "DQN":
                 self.agents.append(DQN(is_train=False, domains=None))
                 self.agents[DOMAINS[domain]].load(f'../dqn/save_{domain}/99')
             elif cfg['policy'] == "PPO":
-                self.agents.append(PPO(is_train=False, domains=None))
-                self.agents[DOMAINS[domain]].load(f'../ppo/save_{domain}/99')
+                self.agents.append(PPO(is_train=False, domains=[domain]))
+                self.agents[DOMAINS[domain]].load(f'../ppo/save/{domain}/4/best_ppo')
             else:
                 raise Exception("Error: the given model is not supported")
 
@@ -72,14 +78,16 @@ class MultipleAgents(Policy):
             self.old_domains.extend(self.cur_domains)
             self.cur_domains = domains
 
+        action = None
         if self.transfer:
-            self.transfer_inter_domain(state)
+            action = self.transfer_inter_domain(state)
 
-        cur_agents = []
-        for domain in self.cur_domains:
-            cur_agents.append(self.agents[DOMAINS[domain]])
+        if not action:
+            cur_agents = []
+            for domain in self.cur_domains:
+                cur_agents.append(self.agents[DOMAINS[domain]])
 
-        action = self.select_domain_action(cur_agents, state)
+            action = self.select_domain_action(cur_agents, state)
 
         return action
 
@@ -87,6 +95,8 @@ class MultipleAgents(Policy):
         """
         Restore after one session
         """
+        self.cur_domains = []
+        self.old_domains = []
         self.cur_domains = []
 
     def extract_domains(self, state):
@@ -109,76 +119,110 @@ class MultipleAgents(Policy):
         return action
 
     def transfer_common_slots(self, old, new, state):
+        action = []
         for slot in SHARED_SLOTS[frozenset([old, new])].get('semi', []):
             if not state['belief_state'][new]['semi'][slot]:
                 state['belief_state'][new]['semi'][slot] = state['belief_state'][old]['semi'][slot]
+                if state['belief_state'][old]['semi'][slot]:
+                    action.append(['Request', new.capitalize(), slot.capitalize(), state['belief_state'][old]['semi'][slot]])
 
         for slot in SHARED_SLOTS[frozenset([old, new])].get('book', []):
             if not state['belief_state'][new]['book'][slot]:
                 state['belief_state'][new]['book'][slot] = state['belief_state'][old]['book'][slot]
+                if state['belief_state'][old]['book'][slot]:
+                    action.append(['Request', new.capitalize(), slot.capitalize(), state['belief_state'][old]['book'][slot]])
+
+        return action
 
     def transfer_taxi_restaurant(self, other_domain, state):
+        action = []
         if not state['belief_state']['taxi']['semi']['arriveBy']:
             state['belief_state']['taxi']['semi']['arriveBy'] = state['belief_state']['restaurant']['book']['time']
+            if state['belief_state']['restaurant']['book']['time']:
+                action.append(['Request', 'Taxi', 'Arrive', state['belief_state']['restaurant']['book']['time']])
 
         if not state['belief_state']['taxi']['semi']['destination']:
             state['belief_state']['taxi']['semi']['destination'] = state['belief_state']['restaurant']['book']['name']
+            if state['belief_state']['restaurant']['book']['name']:
+                action.append(['Request', 'Taxi', 'Dest', state['belief_state']['restaurant']['book']['name']])
 
         if not state['belief_state']['taxi']['semi']['departure']:
             state['belief_state']['taxi']['semi']['departure'] = state['belief_state'][other_domain]['book']['name']
+            if state['belief_state'][other_domain]['book']['name']:
+                action.append(['Request', 'Taxi', 'Depart', state['belief_state'][other_domain]['book']['name']])
+
+        return action
 
     def transfer_inter_domain(self, state):
+        action = None
         if 'restaurant' in self.old_domains and 'hotel' in self.cur_domains:
-            self.transfer_common_slots('restaurant', 'hotel', state)
+            action = self.transfer_common_slots('restaurant', 'hotel', state)
 
         elif 'hotel' in self.old_domains and 'restaurant' in self.cur_domains:
-            self.transfer_common_slots('hotel', 'restaurant', state)
+            action = self.transfer_common_slots('hotel', 'restaurant', state)
 
         elif 'restaurant' in self.old_domains and 'attraction' in self.cur_domains:
-            self.transfer_common_slots('restaurant', 'attraction', state)
+            action = self.transfer_common_slots('restaurant', 'attraction', state)
 
         elif 'attraction' in self.old_domains and 'restaurant' in self.cur_domains:
-            self.transfer_common_slots('attraction', 'restaurant', state)
+            action = self.transfer_common_slots('attraction', 'restaurant', state)
 
         elif 'attraction' in self.old_domains and 'hotel' in self.cur_domains:
-            self.transfer_common_slots('attraction', 'hotel', state)
+            action = self.transfer_common_slots('attraction', 'hotel', state)
 
         elif 'hotel' in self.old_domains and 'attraction' in self.cur_domains:
-            self.transfer_common_slots('hotel', 'attraction', state)
+            action = self.transfer_common_slots('hotel', 'attraction', state)
 
         elif 'restaurant' in self.old_domains and 'train' in self.cur_domains:
-            self.transfer_common_slots('restaurant', 'train', state)
+            action = self.transfer_common_slots('restaurant', 'train', state)
             if not state['belief_state']['train']['semi']['day']:
                 state['belief_state']['train']['semi']['day'] = state['belief_state']['restaurant']['book']['day']
+                if state['belief_state']['restaurant']['book']['day']:
+                    action.append(['Request', 'Train', 'Day', state['belief_state']['restaurant']['book']['day']])
 
         elif 'train' in self.old_domains and 'restaurant' in self.cur_domains:
-            self.transfer_common_slots('train', 'restaurant', state)
+            action = self.transfer_common_slots('train', 'restaurant', state)
             if not state['belief_state']['restaurant']['book']['day']:
                 state['belief_state']['restaurant']['book']['day'] = state['belief_state']['train']['semi']['day']
+                if state['belief_state']['train']['semi']['day']:
+                    action.append(['Request', 'Restaurant', 'Day', state['belief_state']['train']['semi']['day']])
 
         elif 'train' in self.old_domains and 'hotel' in self.cur_domains:
-            self.transfer_common_slots('train', 'hotel', state)
+            action = self.transfer_common_slots('train', 'hotel', state)
             if not state['belief_state']['train']['semi']['day']:
                 state['belief_state']['train']['semi']['day'] = state['belief_state']['hotel']['book']['day']
+                if state['belief_state']['hotel']['book']['day']:
+                    action.append(['Request', 'Train', 'Day', state['belief_state']['hotel']['book']['day']])
 
         elif 'hotel' in self.old_domains and 'train' in self.cur_domains:
-            self.transfer_common_slots('hotel', 'train', state)
+            action = self.transfer_common_slots('hotel', 'train', state)
             if not state['belief_state']['hotel']['book']['day']:
                 state['belief_state']['hotel']['book']['day'] = state['belief_state']['train']['semi']['day']
+                if state['belief_state']['train']['semi']['day']:
+                    action.append(['Request', 'Hotel', 'Day', state['belief_state']['train']['semi']['day']])
 
         elif 'taxi' in self.cur_domains:
             if len(self.old_domains) == 2:
                 dom1, dom2 = self.old_domains
                 if dom1 == 'restaurant':
-                    self.transfer_taxi_restaurant(dom2, state)
+                    action = self.transfer_taxi_restaurant(dom2, state)
                 elif dom2 == 'restaurant':
-                    self.transfer_taxi_restaurant(dom1, state)
+                    action = self.transfer_taxi_restaurant(dom1, state)
                 else:
+                    action = []
                     if not state['belief_state']['taxi']['semi']['destination']:
                         state['belief_state']['taxi']['semi']['destination'] = state['belief_state'][dom2]['book']['name']
+                        if state['belief_state'][dom2]['book']['name']:
+                            action.append(['Request', 'Taxi', 'Dest', state['belief_state'][dom2]['book']['name']])
 
                     if not state['belief_state']['taxi']['semi']['departure']:
                         state['belief_state']['taxi']['semi']['departure'] = state['belief_state'][dom1]['book']['name']
+                        if state['belief_state'][dom1]['book']['name']:
+                            action.append(['Request', 'Taxi', 'Depart', state['belief_state'][dom1]['book']['name']])
+        else:
+            action = []
+
+        return action
 
 
     def load(self, filename):

@@ -135,6 +135,8 @@ class PipelineAgent(Agent):
         state = deepcopy(state) # get rid of reference problem
         # get action
         self.output_action = deepcopy(self.policy.predict(state)) # get rid of reference problem
+        if self.dst:
+            self.dst.state['belief_state'] = state['belief_state']
         # get model response
         if self.nlg is not None:
             model_response = self.nlg.generate(self.output_action)

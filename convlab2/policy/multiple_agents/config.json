@@ -1,4 +1,5 @@
 {
-	"policy": "DQN",
-	"transfer": true
+	"policy": "PPO",
+	"transfer": false,
+	"use_embedding": false
 }

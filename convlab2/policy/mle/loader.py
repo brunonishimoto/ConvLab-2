@@ -21,14 +21,15 @@ class ActMLEPolicyDataLoader():
 
             for belief_state, context_dialog_act, terminated, dialog_act in \
                 zip(raw_data['belief_state'], raw_data['context_dialog_act'], raw_data['terminated'], raw_data['dialog_act']):
-                state = default_state()
-                state['belief_state'] = belief_state
-                state['user_action'] = context_dialog_act[-1]
-                state['system_action'] = context_dialog_act[-2] if len(context_dialog_act) > 1 else {}
-                state['terminated'] = terminated
-                action = dialog_act
-                self.data[part].append([self.vector.state_vectorize(state),
-                         self.vector.action_vectorize(action)])
+                if context_dialog_act:
+                    state = default_state()
+                    state['belief_state'] = belief_state
+                    state['user_action'] = context_dialog_act[-1]
+                    state['system_action'] = context_dialog_act[-2] if len(context_dialog_act) > 1 else {}
+                    state['terminated'] = terminated
+                    action = dialog_act
+                    self.data[part].append([self.vector.state_vectorize(state),
+                            self.vector.action_vectorize(action)])
 
         os.makedirs(processed_dir)
         for part in ['train', 'val', 'test']:

@@ -210,6 +210,9 @@ class PPO(Policy):
     def train(self):
         self.is_train = True
 
+    def save_best(self):
+        self.save(self.save_dir, 'best')
+
     def save(self, directory, epoch):
         if not os.path.exists(directory):
             os.makedirs(directory)

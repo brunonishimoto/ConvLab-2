@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from copy import Error
 import numpy as np
 import torch
 import random
@@ -205,6 +206,8 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True, domains
                 policy_sys.load(load_path)
             else:
                 policy_sys = PPOfD.from_pretrained()
+        else:
+            raise Exception("Invalid model name")
 
 
         dst_usr = None
@@ -220,6 +223,9 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True, domains
         sess = BiSession(agent_sys, simulator, None, evaluator)
 
         task_success = {'All': []}
+        dialogue_length = []
+        dialogue = {}
+        goals = {}
         for seed in range(100):
             random.seed(seed)
             np.random.seed(seed)
@@ -228,8 +234,11 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True, domains
             sys_response = []
             logging.info('-'*50)
             logging.info(f'seed {seed}')
+            dialogue[seed] = {'log': [], 'succ': None, 'goal': sess.user_agent.policy.get_goal()}
+            goals[seed] = sess.user_agent.policy.get_goal()
             for i in range(40):
                 sys_response, user_response, session_over, reward = sess.next_turn(sys_response)
+                dialogue[seed]['log'].append({'state': sess.sys_agent.dst.state['belief_state']})
                 if session_over is True:
                     task_succ = sess.evaluator.task_success()
                     logging.info(f'task success: {task_succ}')
@@ -241,17 +250,23 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True, domains
             else:
                 task_succ = 0
 
+            dialogue[seed]['succ'] = task_succ
             for key in sess.evaluator.goal:
                 if key not in task_success:
                     task_success[key] = []
                 task_success[key].append(task_succ)
             task_success['All'].append(task_succ)
+            dialogue_length.append(i + 1)
 
         for key in task_success:
             logging.info(f'{key} {len(task_success[key])} {np.average(task_success[key]) if len(task_success[key]) > 0 else 0}')
+        logging.info(f'Avg dialogue length: {np.average(dialogue_length)}')
+        json.dump(dialogue, open('dialogue.json', 'w'), indent=2)
+        json.dump(goals, open('goals.json', 'w'), indent=2)
 
         if calculate_reward:
             reward_tot = []
+            length_tot = []
             for seed in range(100):
                 s = env.reset()
                 reward = []
@@ -267,8 +282,11 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True, domains
                     if done: # one due to counting from 0, the one for the last turn
                         break
                 logging.info(f'{seed} reward: {np.mean(reward)}')
+                logging.info(f'{seed} dialogue_length: {t}')
+                length_tot.append(t)
                 reward_tot.append(np.mean(reward))
             logging.info(f'total avg reward: {np.mean(reward_tot)}')
+            logging.info(f'total avg length: {np.mean(length_tot)}')
     else:
         raise Exception("currently supported dataset: MultiWOZ")
 
