@@ -11,7 +11,10 @@ from convlab2.dst.rule.multiwoz import RuleDST
 from convlab2.policy.rule.multiwoz import RulePolicy
 from convlab2.policy.rlmodule import Memory, Transition
 from convlab2.evaluator.multiwoz_eval import MultiWozEvaluator
+from convlab2.task.multiwoz.goal_generator import GoalGenerator
+from convlab2.policy.rule.multiwoz.policy_agenda_multiwoz import Goal
 from pprint import pprint
+from convlab2.policy.goals_eval import user_goal
 import json
 import matplotlib.pyplot as plt
 import sys
@@ -19,6 +22,7 @@ import logging
 import os
 import datetime
 import argparse
+import copy
 
 def init_logging(log_dir_path, path_suffix=None):
     if not os.path.exists(log_dir_path):
@@ -148,11 +152,13 @@ def sample(env, policy, batchsz, process_num):
 
     return buff.get_batch()
 
-def evaluate(dataset_name, model_name, load_path, calculate_reward=True, domains=None):
+def evaluate(dataset_name, model_name, load_path, calculate_reward=True, domains=None, defined_goal=False):
     seed = 20201015
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    goal_generator = GoalGenerator()
+    goal = Goal(goal_generator)
 
     if dataset_name == 'MultiWOZ':
         dst_sys = RuleDST()
@@ -226,11 +232,16 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True, domains
         dialogue_length = []
         dialogue = {}
         goals = {}
-        for seed in range(100):
+        num_dialogues = len(user_goal) if defined_goal else 100
+        for seed in range(num_dialogues):
             random.seed(seed)
             np.random.seed(seed)
             torch.manual_seed(seed)
-            sess.init_session()
+            if defined_goal:
+                goal.set_user_goal(copy.deepcopy(user_goal[seed]))
+                sess.init_session(ini_goal=goal)
+            else:
+                sess.init_session()
             sys_response = []
             logging.info('-'*50)
             logging.info(f'seed {seed}')
@@ -261,14 +272,21 @@ def evaluate(dataset_name, model_name, load_path, calculate_reward=True, domains
         for key in task_success:
             logging.info(f'{key} {len(task_success[key])} {np.average(task_success[key]) if len(task_success[key]) > 0 else 0}')
         logging.info(f'Avg dialogue length: {np.average(dialogue_length)}')
-        json.dump(dialogue, open('dialogue.json', 'w'), indent=2)
+        json.dump(dialogue, open('dialogue1.json', 'w'), indent=2)
         json.dump(goals, open('goals.json', 'w'), indent=2)
 
         if calculate_reward:
             reward_tot = []
             length_tot = []
-            for seed in range(100):
-                s = env.reset()
+            num_dialogues = len(user_goal) if defined_goal else 100
+            for seed in range(num_dialogues):
+                s = None
+                if defined_goal:
+                    goal.set_user_goal(copy.deepcopy(user_goal[seed]))
+                    s = env.reset(ini_goal=goal)
+                else:
+                    s = env.reset()
+
                 reward = []
                 value = []
                 mask = []
@@ -298,6 +316,7 @@ if __name__ == "__main__":
     parser.add_argument("--log_path_suffix", type=str, default="", help="suffix of path of log file")
     parser.add_argument("--log_dir_path", type=str, default="log", help="path of log directory")
     parser.add_argument("--domain", type=str, default="all", help="domain to train")
+    parser.add_argument("--defined_goal", type=bool, default=False, help="use predefined goals")
     args = parser.parse_args()
 
     if args.domain == 'all':
@@ -310,6 +329,7 @@ if __name__ == "__main__":
         dataset_name=args.dataset_name,
         model_name=args.model_name,
         load_path=args.load_path,
-        calculate_reward=True,
-        domains=domains
+        calculate_reward=False,
+        domains=domains,
+        defined_goal=args.defined_goal
     )

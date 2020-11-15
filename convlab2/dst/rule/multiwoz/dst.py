@@ -6,6 +6,8 @@ from convlab2.dst.rule.multiwoz.dst_util import normalize_value
 from convlab2.dst.dst import DST
 from convlab2.util.multiwoz.multiwoz_slot_trans import REF_SYS_DA
 
+DEF_VAL_NOEXIST = 'noexist'
+
 
 class RuleDST(DST):
     """Rule based DST which trivially updates new values from NLU result to states.
@@ -48,12 +50,21 @@ class RuleDST(DST):
                 assert 'semi' in domain_dic
                 assert 'book' in domain_dic
                 if k in domain_dic['semi']:
-                    nvalue = normalize_value(self.value_dict, domain, k, value)
-                    self.state['belief_state'][domain]['semi'][k] = nvalue
+                    if value == DEF_VAL_NOEXIST:
+                        self.state['belief_state'][domain]['semi'][k] = ""
+                    else:
+                        nvalue = normalize_value(self.value_dict, domain, k, value)
+                        self.state['belief_state'][domain]['semi'][k] = nvalue
                 elif k in domain_dic['book']:
-                    self.state['belief_state'][domain]['book'][k] = value
+                    if value == DEF_VAL_NOEXIST:
+                        self.state['belief_state'][domain]['book'][k] = ""
+                    else:
+                        self.state['belief_state'][domain]['book'][k] = value
                 elif k.lower() in domain_dic['book']:
-                    self.state['belief_state'][domain]['book'][k.lower()] = value
+                    if value == DEF_VAL_NOEXIST:
+                        self.state['belief_state'][domain]['book'][k.lower()] = ""
+                    else:
+                        self.state['belief_state'][domain]['book'][k.lower()] = value
                 elif k == 'trainID' and domain == 'train':
                     self.state['belief_state'][domain]['book'][k] = normalize_value(self.value_dict, domain, k, value)
                 else:

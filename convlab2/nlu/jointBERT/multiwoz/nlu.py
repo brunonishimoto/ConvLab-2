@@ -2,6 +2,7 @@ import os
 import zipfile
 import json
 import torch
+import re
 from unidecode import unidecode
 import spacy
 from convlab2.util.file_util import cached_path, get_root_path
@@ -66,6 +67,17 @@ class BERTNLU(NLU):
         print("BERTNLU loaded")
 
     def predict(self, utterance, context=list()):
+        confirm_acts = []
+        if utterance.startswith("Just to confirm"):
+            confirm_slots = re.findall(r'You want (.+) equals (.+) in domain (\w+).', utterance)
+            for slot, value, domain in confirm_slots:
+                confirm_acts.append(['Confirm', domain, slot, value])
+
+            match = re.match(r'Just to confirm. (You want (.+) equals (.+) in domain (\w+).\s?)+', utterance)
+            utterance = utterance[match.span()[1] + 1:]
+            if not utterance:
+                return confirm_acts
+
         # tokenization first, very important!
         ori_word_seq = [token.text for token in self.nlp(unidecode(utterance)) if token.text.strip()]
         # print(ori_word_seq)
@@ -98,11 +110,12 @@ class BERTNLU(NLU):
         for intent, slot, value in das:
             domain, intent = intent.split('-')
             dialog_act.append([intent, domain, slot, value])
-        return dialog_act
+        return confirm_acts + dialog_act
 
 
 if __name__ == '__main__':
-    text = "How about rosa's bed and breakfast ? Their postcode is cb22ha."
+    # text = "How about rosa's bed and breakfast ? Their postcode is cb22ha."
+    text = "Just to confirm. You want Price equals do n't care in domain Hotel."
     nlu = BERTNLU(mode='sys', config_file='multiwoz_sys_context.json',
                   model_file='https://convlab.blob.core.windows.net/convlab-2/bert_multiwoz_all_context.zip')
     print(nlu.predict(text))

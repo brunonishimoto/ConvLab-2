@@ -72,6 +72,19 @@ class Analyzer:
         num_domains_satisfying_constraints = 0
         num_dialogs_satisfying_constraints = 0
 
+        precision1 = []
+        recall1 = []
+        f11 = []
+        match1 = []
+        suc_num1 = 0
+        complete_num1 = 0
+        turn_num1 = 0
+        turn_suc_num1 = 0
+        num_domains1 = 0
+        num_domains_satisfying_constraints1 = 0
+        num_dialogs_satisfying_constraints1 = 0
+        total_shared = 0
+
         reporter = Reporter(model_name)
         logger = logging.getLogger(__name__)
         logging.basicConfig(
@@ -107,17 +120,94 @@ class Analyzer:
             # # pprint(sess.evaluator.goal)
             # print(sess.user_agent.policy.policy.goal.domain_goals, file=f)
             # print('-' * 50,file=f)
+            # print('Goal:', sess.user_agent.policy.policy.goal,file=flog)
+            x = {
+    "hotel": {
+        "info": {
+            "name": "arbury lodge guesthouse"
+        },
+        "book": {
+            "stay": "3",
+            "day": "saturday",
+            "people": "1"
+        },
+        "booked": "?"
+    },
+    "restaurant": {
+        "info": {
+            "area": "centre",
+            "pricerange": "expensive"
+        },
+        "reqt": {
+            "phone": "?"
+        },
+        "book": {
+            "day": "saturday",
+            "people": "3",
+            "time": "13:00"
+        },
+        "booked": "?"
+    }
+}
+            goal = sess.user_agent.policy.policy.domain_goals
+            domains = list(goal.keys())
+            has_shared = False
+            for i in range(len(domains) - 1):
+                for j in range(i + 1, len(domains)):
+                    if 'info' not in goal[domains[i]]:
+                        goal[domains[i]]['info'] = {}
+                    if 'info' not in goal[domains[j]]:
+                        goal[domains[j]]['info'] = {}
 
+                    if 'book' not in goal[domains[i]]:
+                        goal[domains[i]]['book'] = {}
+                    if 'book' not in goal[domains[j]]:
+                        goal[domains[j]]['book'] = {}
+                    for slot in goal[domains[i]]['info']:
+                        if slot in goal[domains[j]]['info'] and goal[domains[i]]['info'][slot] == goal[domains[j]]['info'][slot]:
+                            has_shared = True
+                            break
+                        if slot in goal[domains[j]]['book'] and goal[domains[i]]['info'][slot] == goal[domains[j]]['book'][slot]:
+                            has_shared = True
+                            break
+                    for slot in goal[domains[j]]['info']:
+                        if slot in goal[domains[i]]['info'] and goal[domains[j]]['info'][slot] == goal[domains[i]]['info'][slot]:
+                            has_shared = True
+                            break
+                        if slot in goal[domains[i]]['book'] and goal[domains[j]]['info'][slot] == goal[domains[i]]['book'][slot]:
+                            has_shared = True
+                            break
+                    for slot in goal[domains[i]]['book']:
+                        if slot in goal[domains[j]]['info'] and goal[domains[i]]['book'][slot] == goal[domains[j]]['info'][slot]:
+                            has_shared = True
+                            break
+                        if slot in goal[domains[j]]['book'] and goal[domains[i]]['book'][slot] == goal[domains[j]]['book'][slot]:
+                            has_shared = True
+                            break
+                    for slot in goal[domains[j]]['book']:
+                        if slot in goal[domains[i]]['info'] and goal[domains[j]]['book'][slot] == goal[domains[i]]['info'][slot]:
+                            has_shared = True
+                            break
+                        if slot in goal[domains[i]]['book'] and goal[domains[j]]['book'][slot] == goal[domains[i]]['book'][slot]:
+                            has_shared = True
+                            break
+            if sess.user_agent.policy.policy.goal.domain_goals == x:
+                print('aqui')
+
+            # if not has_shared:
+            #     continue
+            print('Goal:', sess.user_agent.policy.policy.goal,file=flog)
             for i in range(40):
                 sys_response, user_response, session_over, reward = sess.next_turn(
                     sys_response)
-                print('user in', sess.user_agent.get_in_da(),file=flog)
-                print('user out', sess.user_agent.get_out_da(),file=flog)
+                # print('user in', sess.user_agent.get_in_da(),file=flog)
+                # print('user out', sess.user_agent.get_out_da(),file=flog)
                 #
                 # print('sys in', sess.sys_agent.get_in_da(),file=flog)
                 # print('sys out', sess.sys_agent.get_out_da(),file=flog)
                 print('user:', user_response,file=flog)
                 print('sys:', sys_response,file=flog)
+                print('state:', sess.sys_agent.dst.state['belief_state'], file=flog)
 
                 step += 2
 
@@ -140,6 +230,7 @@ class Analyzer:
                 usr_da_list.append(sess.user_agent.get_out_da())
 
                 if session_over:
+                    print('Success: ', sess.evaluator.task_success(),file=flog)
                     break
 
             task_success = sess.evaluator.task_success()
@@ -162,6 +253,26 @@ class Analyzer:
                 num_domains += len(sess.evaluator.goal)
                 num_domains_satisfying_constraints += len(sess.evaluator.goal) * percentage
             num_dialogs_satisfying_constraints += (percentage == 1)
+
+            if has_shared:
+                if task_success:
+                    suc_num1 += 1
+                    turn_suc_num1 += step
+                if task_complete:
+                    complete_num1 += 1
+                if stats[2] is not None:
+                    precision1.append(stats[0])
+                    recall1.append(stats[1])
+                    f11.append(stats[2])
+                if book_rate is not None:
+                    match1.append(book_rate)
+                if len(sess.evaluator.goal) > 0:
+                    num_domains1 += len(sess.evaluator.goal)
+                    num_domains_satisfying_constraints1 += len(sess.evaluator.goal) * percentage
+                num_dialogs_satisfying_constraints1 += (percentage == 1)
+                total_shared += 1
+                turn_num1 += step
+
             if (j+1) % 100 == 0:
                 logger.info("model name %s", model_name)
                 logger.info("dialogue %d", j+1)
@@ -179,6 +290,7 @@ class Analyzer:
                     domain_set.append(da.split('-')[0])
 
             turn_num += step
+
 
             da_list = usr_da_list
             cycle_start = []
@@ -198,6 +310,7 @@ class Analyzer:
                 reporter.record(domain, sess.evaluator.domain_success(domain), sess.evaluator.domain_reqt_inform_analyze(domain), failed_da_sys, failed_da_usr, cycle_start, domain_turn)
 
         tmp = 0 if suc_num == 0 else turn_suc_num / suc_num
+        tmp1 = 0 if suc_num1 == 0 else turn_suc_num1 / suc_num1
         print("=" * 100)
         print("complete number of dialogs/tot:", complete_num / total_dialog)
         print("success number of dialogs/tot:", suc_num / total_dialog)
@@ -210,6 +323,21 @@ class Analyzer:
         print("percentage of domains that satisfy the database constraints: %.3f" % \
               (1 if num_domains == 0 else (num_domains_satisfying_constraints / num_domains)))
         print("percentage of dialogs that satisfy the database constraints: %.3f" % (num_dialogs_satisfying_constraints / total_dialog))
+
+        print("=" * 100)
+        print('SHARED SLOTS: ', total_shared)
+        print("complete number of dialogs/tot:", complete_num1 / total_shared)
+        print("success number of dialogs/tot:", suc_num1 / total_shared)
+        print("average precision:", np.mean(precision1))
+        print("average recall:", np.mean(recall1))
+        print("average f1:", np.mean(f11))
+        print('average book rate:', np.mean(match1))
+        print("average turn (succ):", tmp1)
+        print("average turn (all):", turn_num1 / total_shared)
+        print("percentage of domains that satisfy the database constraints: %.3f" % \
+              (1 if num_domains == 0 else (num_domains_satisfying_constraints1 / num_domains)))
+        print("percentage of dialogs that satisfy the database constraints: %.3f" % (num_dialogs_satisfying_constraints1 / total_shared))
+
         print("=" * 100)
         print("complete number of dialogs/tot:", complete_num / total_dialog, file=f)
         print("success number of dialogs/tot:", suc_num / total_dialog, file=f)

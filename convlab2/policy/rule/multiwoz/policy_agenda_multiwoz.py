@@ -22,6 +22,7 @@ DEF_VAL_DNC = 'dontcare'  # Do not care
 DEF_VAL_NUL = 'none'  # for none
 DEF_VAL_BOOKED = 'yes'  # for booked
 DEF_VAL_NOBOOK = 'no'  # for booked
+DEF_VAL_NOEXIST = 'noexist'
 NOT_SURE_VALS = [DEF_VAL_UNK, DEF_VAL_DNC, DEF_VAL_NUL, DEF_VAL_NOBOOK]
 
 # import reflect table
@@ -49,7 +50,7 @@ class UserPolicyAgendaMultiWoz(Policy):
     with open(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, os.pardir, 'data/multiwoz/value_set.json')) as f:
         stand_value_dict = json.load(f)
 
-    def __init__(self, domains=None):
+    def __init__(self, domains=None, generate_shared=False):
         """
         Constructor for User_Policy_Agenda class.
         """
@@ -62,6 +63,7 @@ class UserPolicyAgendaMultiWoz(Policy):
         self.goal = None
         self.agenda = None
         self.domains = tuple(domains) if domains else None
+        self.generate_shared = generate_shared
 
         Policy.__init__(self)
 
@@ -72,7 +74,7 @@ class UserPolicyAgendaMultiWoz(Policy):
         """ Build new Goal and Agenda for next session """
         self.reset_turn()
         if not ini_goal:
-            self.goal = Goal(self.goal_generator, self.domains)
+            self.goal = Goal(self.goal_generator, self.domains, self.generate_shared)
         else:
             self.goal = ini_goal
         self.domain_goals = self.goal.domain_goals
@@ -211,6 +213,8 @@ class UserPolicyAgendaMultiWoz(Policy):
                         if REF_SYS_DA_M[dom].get(pairs[0].lower(), None) is not None:
                             new_list.append([REF_SYS_DA_M[dom][pairs[0].lower()],
                                              cls._normalize_value(dom, intent, REF_SYS_DA_M[dom][pairs[0].lower()], pairs[1])])
+                        elif intent == 'confirm':
+                            new_list.append([pairs[0].lower(), pairs[1].lower()])
 
                     if len(new_list) > 0:
                         new_action[act.lower()] = new_list
@@ -316,14 +320,17 @@ def check_constraint(slot, val_usr, val_sys):
 class Goal(object):
     """ User Goal Model Class. """
 
-    def __init__(self, goal_generator: GoalGenerator, domain=None):
+    def __init__(self, goal_generator: GoalGenerator, domain=None, generate_shared=False):
         """
         create new Goal by random
         Args:
             goal_generator (GoalGenerator): Goal Generator.
             domain (tuple): specify the domains of the goal to generate
         """
-        self.domain_goals = goal_generator.get_user_goal(domain)
+        if generate_shared:
+            self.domain_goals = goal_generator.get_user_goal_with_shared_slots(domain)
+        else:
+            self.domain_goals = goal_generator.get_user_goal(domain)
 
         self.domains = list(self.domain_goals['domain_ordering'])
         del self.domain_goals['domain_ordering']
@@ -411,8 +418,10 @@ class Agenda(object):
         self.CLOSE_ACT = 'general-bye'
         self.HELLO_ACT = 'general-greet'
         self.__cur_push_num = 0
+        self.__num_confirmation = 0
 
         self.__stack = []
+        self.__books = []
 
         # there is a 'bye' action at the bottom of the stack
         self.__push(self.CLOSE_ACT)
@@ -443,6 +452,7 @@ class Agenda(object):
             goal (Goal): User Goal
         """
         self.__cur_push_num = 0
+        self.__num_confirmation = 0
         self._update_current_domain(sys_action, goal)
 
         for diaact in sys_action.keys():
@@ -494,7 +504,8 @@ class Agenda(object):
                     self._push_item(unk_dom + '-request', slot, DEF_VAL_UNK)
             elif unk_type == 'book' and not self._check_reqt_info(unk_dom) and not self._check_book_info(unk_dom):
                 for (slot, val) in data.items():
-                    self._push_item(unk_dom + '-inform', slot, val)
+                    if [unk_dom, slot] not in self.__books:
+                        self._push_item(unk_dom + '-inform', slot, val)
 
     def update_booking(self, diaact, slot_vals, goal: Goal):
         """
@@ -504,16 +515,21 @@ class Agenda(object):
         :param goal:        Goal
         :return:            True:user want to close the session. False:session is continue
         """
-        _, intent = diaact.split('-')
+        k, intent = diaact.split('-')
         domain = self.cur_domain
 
         isover = False
         if domain not in goal.domains:
             isover = False
 
-        elif intent in ['book', 'inform']:
+        elif intent in ['inform']:
             isover = self._handle_inform(domain, intent, slot_vals, goal)
-
+        elif intent in ['book']:
+            _, value = slot_vals[0]
+            if k == 'booking' and value == DEF_VAL_NUL:
+                isover = self._handle_nofound(domain, intent, slot_vals, goal)
+            else:
+                isover = self._handle_inform(domain, intent, slot_vals, goal)
         elif intent in ['nobook']:
             isover = self._handle_nobook(domain, intent, slot_vals, goal)
 
@@ -548,6 +564,9 @@ class Agenda(object):
         elif intent in ['select']:
             isover = self._handle_select(domain, intent, slot_vals, goal)
 
+        elif intent in ['confirm']:
+            isover = self._handle_confirm(domain, intent, slot_vals, goal)
+
         return isover
 
     def update_general(self, diaact, slot_vals, goal: Goal):
@@ -570,6 +589,7 @@ class Agenda(object):
         """ Clear up all actions """
         self.__stack = []
         self.__cur_push_num = 0
+        self.grow_initiative = 0
         self.__push(self.CLOSE_ACT)
 
     def get_action(self, initiative=1):
@@ -614,6 +634,78 @@ class Agenda(object):
         g_book = goal.domain_goals[domain].get('book', dict({}))
         g_fail_book = goal.domain_goals[domain].get('fail_book', dict({}))
         return g_reqt, g_info, g_fail_info, g_book, g_fail_book
+
+    def _handle_confirm(self, domain, intent, slot_vals, goal: Goal):
+        g_reqt, g_info, g_fail_info, g_book, g_fail_book = self._get_goal_infos(domain, goal)
+
+        for [slot, value] in slot_vals:
+            if slot == 'time':
+                if domain in ['train', 'restaurant']:
+                    slot = 'duration' if domain == 'train' else 'time'
+                else:
+                    logging.warning('illegal booking slot: {}, domain: {}'.format(slot, domain))
+                    continue
+
+            if slot in g_fail_info:
+                if check_constraint(slot, g_fail_info[slot], value):
+                    self._push_item(domain + '-confirm', slot, g_fail_info[slot])
+                else:
+                    self._remove_item(domain + '-inform', slot)
+                    self.__cur_push_num += 1
+
+            elif not g_fail_info and slot in g_info:
+                if check_constraint(slot, g_info[slot], value):
+                    self._push_item(domain + '-confirm', slot, g_info[slot])
+                else:
+                    self._remove_item(domain + '-inform', slot)
+                    self.__cur_push_num += 1
+
+            # elif slot in g_fail_book and value != g_fail_book[slot]:
+            #     self._push_item(domain + '-inform', slot, g_fail_book[slot])
+
+            elif not g_fail_book and slot in g_book:
+                if value != g_book[slot]:
+                    self._push_item(domain + '-confirm', slot, g_book[slot])
+                else:
+                    self._remove_item(domain + '-inform', slot)
+                    # self.__books.append([domain, slot])
+            else:
+                if slot in BOOK_SLOT and not g_book:
+                    continue
+                self._push_item(domain + '-confirm', slot, DEF_VAL_NOEXIST)
+
+            # if slot in g_info:
+            #     if value != g_info[slot]:
+            #         self._push_item(domain + '-inform', slot, g_info[slot])
+            #     elif value == g_info[slot]:
+            #         self._remove_item(domain + '-inform', slot)
+            #         self.__cur_push_num += 1
+
+            # elif slot in g_book:
+            #     if value != g_book[slot]:
+            #         self._push_item(domain + '-inform', slot, g_book[slot])
+            #         # self.__books.append([domain, slot])
+            #     elif value == g_book[slot]:
+            #         self._remove_item(domain + '-inform', slot)
+            #         self.__books.append([domain, slot])
+            #         self.__cur_push_num += 1
+
+            # elif slot in g_fail_info:
+            #     if value != g_fail_info[slot]:
+            #         self._push_item(domain + '-inform', slot, g_fail_info[slot])
+            #     elif value == g_fail_info[slot]:
+            #         self._remove_item(domain + '-inform', slot)
+            #         self.__cur_push_num += 1
+            # # elif slot in g_fail_book:
+            # #     if value != g_fail_book[slot]:
+            # #         self._push_item(domain + '-inform', slot, g_fail_book[slot])
+            # #         self.grow_initiative += 1
+            # #     elif value != g_fail_book[slot]:
+            # #         self._remove_item(domain + '-inform', slot)
+            # else:
+            #     self._push_item(domain + '-inform', slot, DEF_VAL_NOEXIST)
+
+        return False
 
     def _handle_inform(self, domain, intent, slot_vals, goal: Goal):
         g_reqt, g_info, g_fail_info, g_book, g_fail_book = self._get_goal_infos(domain, goal)
@@ -708,6 +800,18 @@ class Agenda(object):
                     # for those sys requests that are not in user goal
                     self._push_item(domain + '-inform', slot, DEF_VAL_DNC)
 
+        return False
+
+    def _handle_nofound(self, domain, intent, slot_vals, goal: Goal):
+        g_reqt, g_info, g_fail_info, g_book, g_fail_book = self._get_goal_infos(domain, goal)
+        if g_fail_info:
+            # update info data to the stack
+            for slot in g_info.keys():
+                if (slot not in g_fail_info) or (slot in g_fail_info and g_fail_info[slot] != g_info[slot]):
+                    self._push_item(domain + '-inform', slot, g_info[slot])
+
+            # change fail_info name
+            goal.domain_goals[domain]['fail_info_fail'] = goal.domain_goals[domain].pop('fail_info')
         return False
 
     def _handle_nooffer(self, domain, intent, slot_vals, goal: Goal):
@@ -856,6 +960,18 @@ class Agenda(object):
         diaacts = []
         slots = []
         values = []
+
+        # All confirmation are popped
+        aux = copy.deepcopy(self.__stack)
+        for i in range(len(aux)):
+            if 'confirm' in aux[i]['diaact']:
+                domain = aux[i]['diaact'].split('-')[0]
+                diaacts.append(domain + '-inform')
+                slots.append(aux[i]['slot'])
+                values.append(aux[i]['value'])
+                self.__stack.remove(aux[i])
+
+
         p_diaact, p_slot = self.__check_next_diaact_slot()
         if p_diaact.split('-')[1] == 'inform' and p_slot in BOOK_SLOT:
             for _ in range(10 if self.__cur_push_num == 0 else self.__cur_push_num):

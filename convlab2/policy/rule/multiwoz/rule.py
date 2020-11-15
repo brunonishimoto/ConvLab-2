@@ -9,14 +9,14 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class RulePolicy(Policy):
 
-    def __init__(self, is_train=False, character='sys', domains=None):
+    def __init__(self, is_train=False, character='sys', domains=None, generate_shared=False):
         self.is_train = is_train
         self.character = character
 
         if character == 'sys':
             self.policy = RuleBasedMultiwozBot(domains)
         elif character == 'usr':
-            self.policy = UserPolicyAgendaMultiWoz(domains)
+            self.policy = UserPolicyAgendaMultiWoz(domains, generate_shared)
         else:
             raise NotImplementedError('unknown character {}'.format(character))
 

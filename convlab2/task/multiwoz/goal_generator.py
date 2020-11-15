@@ -390,7 +390,7 @@ class GoalGenerator:
                                 break
                         else:
                             not_in_info_slots[slots] = self.slots_combination_dist[domain]['reqt'][slots]
-                    pprint(not_in_info_slots)
+                    # pprint(not_in_info_slots)
                     reqt = list(random.choices(list(not_in_info_slots.keys()),
                                                list(not_in_info_slots.values()))[0])
                 else:
@@ -554,6 +554,128 @@ class GoalGenerator:
                 domain_ordering = tuple(list(domain_ordering).remove('train'))
 
         user_goal['domain_ordering'] = domain_ordering
+
+        return user_goal
+
+    def get_user_goal_with_shared_slots(self, domain=None):
+        has_shared = 0
+        user_goal = {}
+        while has_shared != 2:
+            has_shared = 0
+            user_goal = {}
+            domain_ordering = ()
+            if domain:
+                domain_ordering = domain
+            else:
+                while len(domain_ordering) <= 0:
+                    domain_ordering = nomial_sample(self.domain_ordering_dist)
+            # domain_ordering = ('restaurant',)
+
+            user_goal = {dom: self._get_domain_goal(dom) for dom in domain_ordering}
+            assert len(user_goal.keys()) > 0
+
+            # using taxi to communte between places, removing destination and departure.
+            if 'taxi' in domain_ordering:
+                places = [dom for dom in domain_ordering[: domain_ordering.index('taxi')] if
+                        dom in ['attraction', 'hotel', 'restaurant', 'police', 'hospital']]
+                if len(places) >= 1:
+                    del user_goal['taxi']['info']['destination']
+                    # if 'reqt' not in user_goal[places[-1]]:
+                    #     user_goal[places[-1]]['reqt'] = []
+                    # if 'address' not in user_goal[places[-1]]['reqt']:
+                    #     user_goal[places[-1]]['reqt'].append('address')
+                    # the line below introduce randomness by `union`
+                    # user_goal[places[-1]]['reqt'] = list(set(user_goal[places[-1]].get('reqt', [])).union({'address'}))
+                    if places[-1] == 'restaurant' and 'book' in user_goal['restaurant']:
+                        user_goal['taxi']['info']['arriveBy'] = user_goal['restaurant']['book']['time']
+                        if 'leaveAt' in user_goal['taxi']['info']:
+                            del user_goal['taxi']['info']['leaveAt']
+
+                        has_shared += 1
+                if len(places) >= 2:
+                    del user_goal['taxi']['info']['departure']
+                    # if 'reqt' not in user_goal[places[-2]]:
+                    #     user_goal[places[-2]]['reqt'] = []
+                    # if 'address' not in user_goal[places[-2]]['reqt']:
+                    #     user_goal[places[-2]]['reqt'].append('address')
+                    # the line below introduce randomness by `union`
+                    # user_goal[places[-2]]['reqt'] = list(set(user_goal[places[-2]].get('reqt', [])).union({'address'}))
+                    has_shared += 1
+
+            def match_slot_domains(slot, slot_type, domain1, domain2):
+                if domain1 in domain_ordering and domain2 in domain_ordering and \
+                        f"fail_{slot_type}" not in user_goal[domain1] and \
+                        domain_ordering.index(domain1) > domain_ordering.index(domain2) and \
+                        slot in user_goal[domain2][slot_type]:
+                    adjusted_goal = deepcopy(user_goal[domain1][slot_type])
+                    adjusted_goal[slot] = user_goal[domain2][slot_type][slot]
+                    if len(self.db.query(domain1, adjusted_goal.items())) > 0:
+                        user_goal[domain1][slot_type][slot] = user_goal[domain2][slot_type][slot]
+                        return True
+
+            # match area of attraction and restaurant
+            if match_slot_domains('area', 'info', 'restaurant', 'attraction'):
+                has_shared += 1
+            if match_slot_domains('area', 'info', 'attraction', 'restaurant'):
+                has_shared += 1
+
+            # match area of attraction and hotel
+            if match_slot_domains('area', 'info', 'hotel', 'attraction'):
+                has_shared += 1
+            if match_slot_domains('area', 'info', 'attraction', 'hotel'):
+                has_shared += 1
+
+            # match area of restaurant and hotel
+            if match_slot_domains('area', 'info', 'hotel', 'restaurant'):
+                has_shared += 1
+            if match_slot_domains('area', 'info', 'restaurant', 'hotel'):
+                has_shared += 1
+
+            # match pricerange of restaurant and hotel
+            if match_slot_domains('pricerange', 'info', 'hotel', 'restaurant'):
+                has_shared += 1
+            if match_slot_domains('pricerange', 'info', 'restaurant', 'hotel'):
+                has_shared += 1
+
+            # match day and people of restaurant and hotel
+            if 'restaurant' in domain_ordering and 'hotel' in domain_ordering:
+                if 'book' in user_goal['restaurant'] or 'book' in user_goal['hotel']:
+                    if 'book' not in user_goal['hotel']:
+                        user_goal['hotel']['book'] = {}
+                    if 'book' not in user_goal['restaurant']:
+                        user_goal['restaurant']['book'] = {}
+
+                    if 'people' in user_goal['restaurant']['book'] and user_goal['restaurant']['book']['people']:
+                        user_goal['hotel']['book']['people'] = user_goal['restaurant']['book']['people']
+                        has_shared += 1
+                    elif 'people' in user_goal['hotel']['book'] and user_goal['hotel']['book']['people']:
+                        user_goal['restaurant']['book']['people'] = user_goal['hotel']['book']['people']
+                        has_shared += 1
+
+                    if 'day' in user_goal['restaurant']['book'] and user_goal['restaurant']['book']['day']:
+                        user_goal['hotel']['book']['day'] = user_goal['restaurant']['book']['day']
+                        has_shared += 1
+                    elif 'day' in user_goal['hotel']['book'] and user_goal['hotel']['book']['day']:
+                        user_goal['restaurant']['book']['day'] = user_goal['hotel']['book']['day']
+                        has_shared += 1
+
+            # match day and people of hotel and train
+            if 'hotel' in domain_ordering and 'train' in domain_ordering and \
+                    'book' in user_goal['hotel'] and 'info' in user_goal['train']:
+                if user_goal['train']['info']['destination'] == 'cambridge' and \
+                        'day' in user_goal['hotel']['book']:
+                    user_goal['train']['info']['day'] = user_goal['hotel']['book']['day']
+                    has_shared += 1
+                elif user_goal['train']['info']['departure'] == 'cambridge' and \
+                        user_goal['train']['info']['day']:
+                    user_goal['hotel']['book']['day'] = user_goal['train']['info']['day']
+                    has_shared += 1
+                # In case, we have no query results with adjusted train goal, we simply drop the train goal.
+                if len(self.db.query('train', user_goal['train']['info'].items())) == 0:
+                    del user_goal['train']
+                    domain_ordering = tuple(list(domain_ordering).remove('train'))
+
+            user_goal['domain_ordering'] = domain_ordering
 
         return user_goal
 
@@ -741,4 +863,4 @@ class GoalGenerator:
 
 if __name__ == '__main__':
     goal_generator = GoalGenerator(corpus_path=os.path.join(get_root_path(), 'data/multiwoz/train.json'), sample_reqt_from_trainset=True)
-    pprint(goal_generator.get_user_goal())
+    pprint(goal_generator.get_user_goal_with_shared_slots())

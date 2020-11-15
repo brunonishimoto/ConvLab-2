@@ -14,8 +14,8 @@ class Environment():
         self.sys_dst = sys_dst
         self.evaluator = evaluator
 
-    def reset(self):
-        self.usr.init_session()
+    def reset(self, **kwargs):
+        self.usr.init_session(**kwargs)
         self.sys_dst.init_session()
         if self.evaluator:
             self.evaluator.add_goal(self.usr.policy.get_goal())

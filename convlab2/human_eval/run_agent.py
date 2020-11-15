@@ -14,6 +14,7 @@ from convlab2.nlu.milu.multiwoz import MILU
 from convlab2.nlu.jointBERT.multiwoz import BERTNLU
 from convlab2.dst.rule.multiwoz import RuleDST
 from convlab2.policy.rule.multiwoz import RulePolicy
+from convlab2.policy.multiple_agents import MultipleAgents
 from convlab2.nlg.template.multiwoz import TemplateNLG
 from convlab2.evaluator.multiwoz_eval import MultiWozEvaluator
 import random
@@ -25,10 +26,10 @@ rgo_queue = PriorityQueue(maxsize=0)
 
 app = Flask(__name__)
 
-# sys_nlu = BERTNLU()
-sys_nlu = MILU()
+sys_nlu = BERTNLU()
+# sys_nlu = MILU()
 sys_dst = RuleDST()
-sys_policy = RulePolicy(character='sys')
+sys_policy = MultipleAgents()
 sys_nlg = TemplateNLG(is_user=False)
 
 agent = PipelineAgent(sys_nlu,sys_dst,sys_policy, sys_nlg,'sys')

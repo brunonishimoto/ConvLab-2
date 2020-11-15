@@ -5,6 +5,7 @@
 """
 
 import os
+import re
 from pprint import pprint
 import torch
 from allennlp.common.checks import check_for_gpu
@@ -71,6 +72,17 @@ class MILU(NLU):
         if len(utterance) == 0:
             return []
 
+        confirm_acts = []
+        if utterance.startswith("Just to confirm"):
+            confirm_slots = re.findall(r'You want (\w+) equals (\w+) in domain (\w+).', utterance)
+            for slot, value, domain in confirm_slots:
+                confirm_acts.append(['Confirm', domain, slot, value])
+
+            match = re.match(r'Just to confirm. (You want (.+) equals (.+) in domain (.+).\s?)+', utterance)
+            utterance = utterance[match.span()[1] + 1:]
+            if not utterance:
+                return confirm_acts
+
         if self.context_size > 0 and len(context) > 0:
             context_tokens = sum([self.tokenizer.split_words(utterance+" SENT_END") for utterance in context[-self.context_size:]], [])
         else:
@@ -84,7 +96,7 @@ class MILU(NLU):
             for slot, value in svs:
                 domain, intent = domain_intent.split('-')
                 tuples.append([intent, domain, slot, value])
-        return tuples
+        return confirm_acts + tuples
 
 
 if __name__ == "__main__":

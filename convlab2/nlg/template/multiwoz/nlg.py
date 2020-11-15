@@ -111,6 +111,19 @@ class TemplateNLG(NLG):
         Returns:
             generated sentence
         """
+        confirm_actions = [act for act in dialog_acts if act[0] == 'Confirm']
+
+        start_str = ""
+        if confirm_actions:
+            start_str = "Just to confirm. "
+            for act in confirm_actions:
+                confirm_str = f"You want {act[2]} equals {act[3]} in domain {act[1]}. "
+                start_str += confirm_str
+
+            start_str.strip()
+
+        dialog_acts = [act for act in dialog_acts if act[0] != 'Confirm']
+
         dialog_acts = self.sorted_dialog_act(dialog_acts)
         action = collections.OrderedDict()
         for intent, domain, slot, value in dialog_acts:
@@ -127,7 +140,7 @@ class TemplateNLG(NLG):
                 else:
                     template = self.manual_system_template
 
-                return self._manual_generate(dialog_acts, template)
+                return start_str + ' ' + self._manual_generate(dialog_acts, template)
 
             elif mode == 'auto':
                 if is_user:
@@ -135,7 +148,7 @@ class TemplateNLG(NLG):
                 else:
                     template = self.auto_system_template
 
-                return self._auto_generate(dialog_acts, template)
+                return start_str + ' ' + self._auto_generate(dialog_acts, template)
 
             elif mode == 'auto_manual':
                 if is_user:
@@ -148,7 +161,7 @@ class TemplateNLG(NLG):
                 res = self._auto_generate(dialog_acts, template1)
                 if res == 'None':
                     res = self._manual_generate(dialog_acts, template2)
-                return res
+                return start_str + ' ' + res
 
             else:
                 raise Exception("Invalid mode! available mode: auto, manual, auto_manual")
@@ -264,7 +277,7 @@ class TemplateNLG(NLG):
 
 def example():
     # dialog act
-    dialog_acts = [['Inform', 'Hotel', 'Area', 'east'],['Inform', 'Hotel', 'Internet', 'no'], ['welcome', 'general', 'none', 'none']]
+    dialog_acts = [['Inform', 'Hotel', 'Area', 'east'], ['Inform', 'Hotel', 'Day', 'tomorrow'], ['Confirm', 'Hotel', 'Internet', 'no'], ['Confirm', 'Restaurant', 'day', 'tomorrow']]
     #dialog_acts = [['Inform', 'Restaurant', 'NotBook', 'none']]
     print(dialog_acts)
 
